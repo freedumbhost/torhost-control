@@ -60,6 +60,7 @@ dns_servers_eth0="10.0.{{.Id}}.5"
 	t := template.Must(template.New("net").Parse(network))
 
 	var net bytes.Buffer
+	// TODO Handle the case where there's an error parsing the template
 	t.Execute(&net, vmInfo)
 
 	err := ioutil.WriteFile("/etc/conf.d/net", net.Bytes(), 0644)
