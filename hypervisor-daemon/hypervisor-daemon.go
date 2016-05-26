@@ -277,7 +277,6 @@ func createVM(vmId int, v VMInformation) {
 		fmt.Fprintln(os.Stderr, "error talking to torcontrol: %v", err)
 		return
 	}
-	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		v.updateVM(vmId, "broken")
@@ -287,6 +286,9 @@ func createVM(vmId int, v VMInformation) {
 
 	// Determine if the final part, tor stuff, worked
 	status := string(body)
+
+	// Close the response body
+	resp.Body.Close()
 
 	if (status != "creating") {
 		// TODO we should never get here, so handle this more strongly, it's probably an attack?
@@ -305,7 +307,6 @@ func createVM(vmId int, v VMInformation) {
 		fmt.Fprintln(os.Stderr, "error talking to torcontrol: %v", err)
 		return
 	}
-	defer resp.Body.Close()
 	body, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		v.updateVM(vmId, "broken")
@@ -315,6 +316,9 @@ func createVM(vmId int, v VMInformation) {
 
 	// Determine if the final part, tor stuff, worked
 	status = string(body)
+
+	// Close the response body
+	resp.Body.Close()
 
 	if (status == "invalid" || status == "unknown") {
 		// TODO we should never get here, so handle this more strongly, it's probably an attack?
