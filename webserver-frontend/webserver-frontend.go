@@ -59,7 +59,7 @@ func createHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
 	} else {
 		vmId := v.addVM()
 		// fire off the request
-		resp, err := http.Get(fmt.Sprintf("http://10.0.5.25/create/%v", vmId))
+		resp, err := http.Get(fmt.Sprintf("http://10.0.5.20/create/%v", vmId))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error talking to hypervisor-daemon (create): %v", err)
 			fmt.Fprintf(w, "shits fucked m8, come back later")
@@ -90,7 +90,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
 	fmt.Fprintf(w, "<h1>VM created. ID: %v</h1>", vmId)
 
 	// find out what the status is and print it
-	resp, err := http.Get(fmt.Sprintf("http://10.0.5.25/view/%v", vmId))
+	resp, err := http.Get(fmt.Sprintf("http://10.0.5.20/view/%v", vmId))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error talking to hypervisor-daemon: %v", err)
 		fmt.Fprintf(w, "shits fucked m8, come back later")

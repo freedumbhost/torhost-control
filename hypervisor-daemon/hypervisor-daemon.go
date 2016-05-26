@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"bytes"
 	"io/ioutil"
+	"time"
 )
 
 type VMInformation struct {
@@ -287,7 +288,35 @@ func createVM(vmId int, v VMInformation) {
 	// Determine if the final part, tor stuff, worked
 	status := string(body)
 
-	if (status == "invalid" || status == "error") {
+	if (status != "creating") {
+		// TODO we should never get here, so handle this more strongly, it's probably an attack?
+		fmt.Fprintln(os.Stderr, "error talking to torcontrol, response: %v", err)
+		v.updateVM(vmId, "broken")
+		return
+	}
+
+	// Wait a while for tor to generate it
+	time.Sleep(30 * time.Second)
+
+	// fetch the hostname
+	resp, err = http.Get(fmt.Sprintf("http://10.0.0.5/view/%v", vmId))
+	if err != nil {
+		v.updateVM(vmId, "broken")
+		fmt.Fprintln(os.Stderr, "error talking to torcontrol: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	body, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		v.updateVM(vmId, "broken")
+		fmt.Fprintln(os.Stderr, "error getting response from torcontrol: %v", err)
+		return
+	}
+
+	// Determine if the final part, tor stuff, worked
+	status = string(body)
+
+	if (status == "invalid" || status == "unknown") {
 		// TODO we should never get here, so handle this more strongly, it's probably an attack?
 		fmt.Fprintln(os.Stderr, "error talking to torcontrol, response: %v", err)
 		v.updateVM(vmId, "broken")
