@@ -38,13 +38,13 @@ func run() (int) {
 	// Create our datastructure
 	v := TorRCStruct{}
 
-	http.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/create/", func(w http.ResponseWriter, r *http.Request) {
 		createHandler(w, r, v)
 	})
 
 	// IMPORTANT OMG
 	// Only ever bind to one address!
-	http.ListenAndServe("10.0.5.5:80", nil)
+	http.ListenAndServe("10.0.0.5:80", nil)
 
 	return 0
 }
@@ -90,11 +90,11 @@ func createHandler(w http.ResponseWriter, r *http.Request, v TorRCStruct) {
 	}
 
 	// Restart networking
-	err = exec.Command("/etc/init.d/net.eth0", "restart").Run()
+	err = exec.Command("/etc/init.d/networking", "restart").Run()
 	if err != nil {
 		// TODO More graceful handling of this. If the network is down, how can we talk back?
 		fmt.Fprintf(w, "error")
-		fmt.Fprintln(os.Stderr, "error executing eth0 restart for new VM: %v", err)
+		fmt.Fprintln(os.Stderr, "error executing networking restart for new VM: %v", err)
 		return
 	}
 
