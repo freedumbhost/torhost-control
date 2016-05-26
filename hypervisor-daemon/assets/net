@@ -11,14 +11,14 @@ vlans_enp4s0="{{ range $key, $value := .Vms }}{{ $key }} {{ end }}"
 
 {{ range $key, $value := .Vms }}
 # Configuration for VM{{ $key }}
-	# We need to ensure we're not using DHCP, instead we'll configure it manually
-	config_enp4s0_{{ $key }}="null"
+# We need to ensure we're not using DHCP, instead we'll configure it manually
+config_enp4s0_{{ $key }}="null"
 
-	# A bridge for the VM
-	config_br{{ $key }}="10.0.{{ $key }}.20/24"
-	brctl_br{{ $key }}="setfd 0
-	sethello 10
-	stp off"
-	bridge_br{{ $key }}="enp4s0.{{ $key }}"
+# A bridge for the VM
+config_br{{ $key }}="10.0.{{ $key }}.20/24"
+brctl_br{{ $key }}="setfd 0
+sethello 10
+stp off"
+bridge_br{{ $key }}="enp4s0.{{ $key }}"
 
 {{ end }}

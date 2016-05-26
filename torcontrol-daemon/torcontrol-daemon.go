@@ -116,11 +116,46 @@ func createHandler(w http.ResponseWriter, r *http.Request, v TorRCStruct) {
 		} // else it probably was something we can ignore
 	}
 
+	// Configure ip tables
+	// TODO rewrite so this doesn't require a reload
+	t, err = template.ParseFiles("assets/iptables")
+	if err != nil {
+		fmt.Fprintf(w, "error")
+		fmt.Fprintf(os.Stderr, "error creating iptables template for new VM: %v", err)
+		return
+	}
+
+	var iptables bytes.Buffer
+	err = t.Execute(&iptables, vms)
+	if err != nil {
+		fmt.Fprintf(w, "error")
+		fmt.Fprintf(os.Stderr, "error executing iptables template for new VM: %v", err)
+		return
+	}
+
+	// Write new iptables file
+	err = ioutil.WriteFile("/etc/iptables", iptables.Bytes(), 0644)
+	if err != nil {
+		fmt.Fprintf(w, "error")
+		fmt.Fprintf(os.Stderr, "error writing iptables template for new VM: %v", err)
+		return
+	}
+
+	// Reload iptables
+	err = exec.Command("iptables-restore", "/etc/iptables").Run()
+	if err != nil {
+		// TODO More graceful handling of this. If iptables is down, HOLY SHIT FIRE, like shutdown -h now
+		fmt.Fprintf(w, "error")
+		fmt.Fprintln(os.Stderr, "error executing iptables restore for new VM: %v", err)
+		return
+	}
+
 	// Generate new torrc
 	t, err = template.ParseFiles("assets/torrc")
 	if err != nil {
 		fmt.Fprintf(w, "error")
 		fmt.Fprintf(os.Stderr, "error creating torrc template for new VM: %v", err)
+		return
 	}
 
 	var torrc bytes.Buffer

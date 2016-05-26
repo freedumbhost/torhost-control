@@ -12,7 +12,6 @@ import (
 	"text/template"
 	"bytes"
 	"io/ioutil"
-	"time"
 )
 
 type VMInformation struct {
@@ -108,6 +107,11 @@ func run() (int) {
 		syncHandler(w, r, v)
 	})
 
+	// View information about a given VM
+	http.HandleFunc("/view/", func(w http.ResponseWriter, r *http.Request) {
+		viewHandler(w, r, v)
+	})
+
 	// Create a new VM of a given ID
 	http.HandleFunc("/create/", func(w http.ResponseWriter, r *http.Request) {
 		createHandler(w, r, v)
@@ -117,6 +121,31 @@ func run() (int) {
 	http.ListenAndServe("10.0.5.20:80", nil)
 
 	return 0
+}
+
+func viewHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
+	vmIdStr := r.URL.Path[len("/view/"):]
+	vmId, err := strconv.Atoi(vmIdStr)
+	// Check whether the ID is valid
+	if err != nil {
+		fmt.Fprintf(w, "invalid")
+		return
+	}
+
+	// VMs < 50 are reserved for administrative use
+	if (vmId < 50 || vmId > 254) {
+		fmt.Fprintf(w, "invalid")
+		return
+	}
+
+	// Confirm there is a vm running
+	if _, exists := v.Vms[vmId]; !exists {
+		fmt.Fprintf(w, "invalid")
+		return
+	}
+
+	// valid and running
+	fmt.Fprintf(w, v.Vms[vmId])
 }
 
 func syncHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
@@ -217,7 +246,7 @@ func createVM(vmId int, v VMInformation) {
 	outStr := string(out)
 	if err != nil {
 		v.updateVM(vmId, "broken")
-		fmt.Fprintln(os.Stderr, "error starting screen session for new VM: %v", err, outStr)
+		fmt.Fprintln(os.Stderr, "error starting screen session for new VM: %v \r\nadditional: %v", err, outStr)
 		return
 	}
 
@@ -241,9 +270,30 @@ func createVM(vmId int, v VMInformation) {
 	*/
 
 	// Talk to the raspberry pi about getting a new Tor set up
-	// TODO
+	resp, err := http.Get(fmt.Sprintf("http://10.0.0.5/create/%v", vmId))
+	if err != nil {
+		v.updateVM(vmId, "broken")
+		fmt.Fprintln(os.Stderr, "error talking to torcontrol: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		v.updateVM(vmId, "broken")
+		fmt.Fprintln(os.Stderr, "error getting response from torcontrol: %v", err)
+		return
+	}
 
-	// Update our VM state to complete, since we got here without errors!
-	v.updateVM(vmId, "running")
+	// Determine if the final part, tor stuff, worked
+	status := string(body)
+
+	if (status == "invalid" || status == "error") {
+		// TODO we should never get here, so handle this more strongly, it's probably an attack?
+		fmt.Fprintln(os.Stderr, "error talking to torcontrol, response: %v", err)
+		v.updateVM(vmId, "broken")
+		return
+	}
+
+	// Update VM status to be the onion address
+	v.updateVM(vmId, status)
 }
-
