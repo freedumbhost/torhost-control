@@ -175,7 +175,7 @@ func create(vmId int, v sync.Mutex) {
 	}
 
 	// Reload iptables
-	err = exec.Command("iptables-restore", "/etc/iptables").Run()
+	//err = exec.Command("iptables-restore", "/etc/iptables").Run()
 	if err != nil {
 		// TODO More graceful handling of this. If iptables is down, HOLY SHIT FIRE, like shutdown -h now
 		fmt.Fprintln(os.Stderr, "error executing iptables restore for new VM: %v", err)

@@ -226,13 +226,15 @@ func createVM(vmId int, v VMInformation) {
 		return
 	}
 
-	// Restart network
-	err = exec.Command("/etc/init.d/net.enp4s0", "restart").Run()
+	// Manually bring up the new vlan
+	out, err := exec.Command("ip", "link", "add", "link", "enp4s0", "name", fmt.Sprintf("enp4s0.%v", vmId), "type", "vlan", "id", fmt.Sprintf("%v", vmId)).Output()
 	if err != nil {
 		v.updateVM(vmId, "broken")
-		fmt.Fprintln(os.Stderr, "error executing enp4s0 restart for new VM: %v", err)
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("error adding new vlan: %v %s", err, out))
 		return
 	}
+
+	// Activate the new bridge
 	err = exec.Command(fmt.Sprintf("/etc/init.d/net.br%v", vmId), "start").Run()
 	if err != nil {
 		v.updateVM(vmId, "broken")
@@ -243,7 +245,7 @@ func createVM(vmId int, v VMInformation) {
 	// Create a new screen/qemu instance
 	cmd := exec.Command("screen", "-d", "-m", "-S", fmt.Sprintf("vm%v", vmId), "qemu-system-x86_64", "-nographic", "-enable-kvm", "-cpu", "host", "-curses", "-m", "512M", "-drive", fmt.Sprintf("file=/root/vm-images/vm%v/vm%v-gentoo-vanilla-v2.img,if=virtio", vmId, vmId), "-netdev", fmt.Sprintf("tap,helper=/usr/libexec/qemu-bridge-helper --br=br%v,id=hn0", vmId), "-device", "virtio-net-pci,netdev=hn0,id=nic1", "-append", fmt.Sprintf("root=/dev/vda4 ro vmid=%v", vmId), "-kernel", "/root/vm-images/kernels/vmlinuz-4.1.7-hardened-r1")
 	// TODO: Find a way to check the error properly without using .Run() -- CHANGE TO .Start() else it won't work in futuer
-	out, err := cmd.Output()
+	out, err = cmd.Output()
 	outStr := string(out)
 	if err != nil {
 		v.updateVM(vmId, "broken")
