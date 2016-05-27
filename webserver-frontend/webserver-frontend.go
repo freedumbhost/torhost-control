@@ -53,7 +53,7 @@ func run() (int) {
 }
 
 func createHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
-	fmt.Println("[%v] %v", time.Now(), r.URL.Path)
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 	if len(v.vms) >= 5 {
 		fmt.Fprintf(w, "<h1>Too many VMs are already running. Come back later</h1>")
 	} else {
@@ -85,7 +85,7 @@ func createHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
-	fmt.Println("[%v] %v", time.Now(), r.URL.Path)
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 	vmId := r.URL.Path[len("/view/"):]
 	fmt.Fprintf(w, "<h1>VM created. ID: %v</h1>", vmId)
 
@@ -113,7 +113,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
-	fmt.Println("[%v] %v", time.Now(), r.URL.Path)
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 	fmt.Fprintf(w, "<h1>Free Dumb Hosting</h1>There are currently %v VMs running. <a href='/create'>Create a new VM</a>. no illegal stuff pls, no cp etc. <br> more features, like being able to host a website instead of just a shell, coming later", len(v.vms))
 }
 
