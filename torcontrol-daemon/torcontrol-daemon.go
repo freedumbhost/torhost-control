@@ -14,11 +14,6 @@ import (
 	"strings"
 )
 
-// TODO Determine if this needs to be a struct or we can just use a global variable
-type TorRCStruct struct {
-	Mux sync.Mutex
-}
-
 type VMInformation struct {
 	mux sync.Mutex
 	// This map is id => state (should be an enum I guess)
@@ -35,7 +30,7 @@ func main() {
 
 func run() (int) {
 	// Create our datastructure
-	v := TorRCStruct{}
+	v := sync.Mutex{}
 
 	http.HandleFunc("/create/", func(w http.ResponseWriter, r *http.Request) {
 		createHandler(w, r, v)
@@ -52,7 +47,7 @@ func run() (int) {
 	return 0
 }
 
-func viewHandler(w http.ResponseWriter, r *http.Request, v TorRCStruct) {
+func viewHandler(w http.ResponseWriter, r *http.Request, v sync.Mutex) {
 	// Get the ID of the new VM
 	vmIdStr := r.URL.Path[len("/create/"):]
 	vmId, err := strconv.Atoi(vmIdStr)
@@ -79,11 +74,10 @@ func viewHandler(w http.ResponseWriter, r *http.Request, v TorRCStruct) {
 	fmt.Fprintf(w, string(buf))
 }
 
-func createHandler(w http.ResponseWriter, r *http.Request, v TorRCStruct) {
+func createHandler(w http.ResponseWriter, r *http.Request, v sync.Mutex) {
 	// TODO In the future we will allow more than just sshd port to be a hidden service
-	// Lock to be safe
-	v.Mux.Lock()
-	// defer v.Mux.Unlock() -- defer takes place in go routine create
+	// Lock to be safe (unlock in the actual create goroutine)
+	v.Lock()
 
 	// Get the ID of the new VM
 	vmIdStr := r.URL.Path[len("/create/"):]
@@ -101,9 +95,9 @@ func createHandler(w http.ResponseWriter, r *http.Request, v TorRCStruct) {
 	fmt.Fprintf(w, "creating")
 }
 
-func create(vmId int, v TorRCStruct) {
+func create(vmId int, v sync.Mutex) {
 	// remove the lock when we're done
-	defer v.Mux.Unlock()
+	defer v.Unlock()
 
 	// Add network configuration
 	t, err := template.ParseFiles("assets/networks-vlan")
@@ -124,11 +118,20 @@ func create(vmId int, v TorRCStruct) {
 		return
 	}
 
-	// Restart networking
-	err = exec.Command("/etc/init.d/networking", "restart").Run()
+	// Instead of restarting network, lets just run the commands to bring up that one vlan
+	err = exec.Command("vconfig", "add", "eth0", string(vmId)).Run()
 	if err != nil {
-		// TODO More graceful handling of this. If the network is down, how can we talk back?
-		fmt.Fprintln(os.Stderr, "error executing networking restart for new VM: %v", err)
+		fmt.Fprintln(os.Stderr, "error running vconfig", err)
+		return
+	}
+	err = exec.Command("ifconfig", fmt.Sprintf("eth0.%v", vmId), "up").Run()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error running ifconfig up", err)
+		return
+	}
+	err = exec.Command("ifconfig", fmt.Sprintf("eth0.%v", vmId), fmt.Sprintf("10.0.%v.5", vmId), "255.255.255.0").Run()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error running ifconfig configuration", err)
 		return
 	}
 
@@ -200,9 +203,10 @@ func create(vmId int, v TorRCStruct) {
 		return
 	}
 
-	// Restart tor to reload torrc
-	// TODO just reparse file instead of restart
-	err = exec.Command("/etc/init.d/tor", "restart").Run()
+	// Send SIGHUP to Tor
+	// From docs: The signal instructs Tor to reload its configuration (including closing and reopening logs), and kill and restart its helper processes if applicable.
+	// TODO Look into using control port to make changes without a reload required
+	err = exec.Command("pkill", "-SIGHUP", "/usr/bin/tor").Run()
 	if err != nil {
 		// TODO More graceful handling of this. If tor is down, HOLY SHIT FIRE
 		fmt.Fprintln(os.Stderr, "error executing tor restart for new VM: %v", err)
