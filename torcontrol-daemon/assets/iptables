@@ -3,6 +3,7 @@
 :INPUT ACCEPT [0:0]
 :OUTPUT ACCEPT [0:0]
 :POSTROUTING ACCEPT [0:0]
+-A PREROUTING -i eth0 -p tcp -m tcp --dport 80 -d 10.0.0.5 -j RETURN
 -A PREROUTING -i eth0 -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j REDIRECT --to-ports 9040
 {{ range $key, $value := .Vms }}
 -A PREROUTING -i eth0.{{ $key }} -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j REDIRECT --to-ports 9040
@@ -16,6 +17,7 @@ COMMIT
 -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 -A INPUT -i lo -j ACCEPT
 -A INPUT -i eth1 -j ACCEPT
+-A INPUT -i eth0 -p tcp -m tcp --dport 80 -j ACCEPT
 -A INPUT -i eth0 -p tcp -m tcp --dport 9050 -j ACCEPT
 -A INPUT -i eth0 -p tcp -m tcp --dport 9040 -j ACCEPT
 -A INPUT -i eth0 -p udp -m udp --dport 53 -j ACCEPT
