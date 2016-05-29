@@ -206,7 +206,7 @@ func create(vmId int, v sync.Mutex) {
 	// Send SIGHUP to Tor
 	// From docs: The signal instructs Tor to reload its configuration (including closing and reopening logs), and kill and restart its helper processes if applicable.
 	// TODO Look into using control port to make changes without a reload required
-	err = exec.Command("pkill", "-SIGHUP", "/usr/bin/tor").Run()
+	err = exec.Command("pkill", "-SIGHUP", "tor").Run()
 	if err != nil {
 		// TODO More graceful handling of this. If tor is down, HOLY SHIT FIRE
 		fmt.Fprintln(os.Stderr, "error executing tor restart for new VM: %v", err)
