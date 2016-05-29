@@ -21,8 +21,7 @@
 ## configure one below. Set "SocksPort 0" if you plan to run Tor only
 ## as a relay, and not make any local application connections yourself.
 #SocksPort 9050 # Default: Bind to localhost:9050 for local connections.
-#
-## No configuration for SocksPort is here, as we put all our custom configuration at the end of the file
+SocksPort 0 # Do not listen on SocksPort at all, no need
 
 ## Entry policies to allow/deny SOCKS requests based on IP address.
 ## First entry that matches wins. If no SocksPolicy is set, we accept
@@ -209,14 +208,12 @@ HiddenServicePort 80 10.0.5.25:80
 
 ## This is for the hypervisor, so unlikely to be replaced at any point
 TransPort 10.0.0.5:9040
-DNSPort 10.0.0.5:53
-SocksPort 10.0.0.5:9050
+DNSPort 10.0.0.5:9053
 
 ## Automatically generated configuration
 {{ range $key, $value := .Vms }}
-SocksPort 10.0.{{ $key }}.5:9050
 TransPort 10.0.{{ $key }}.5:9040
-DNSPort 10.0.{{ $key }}.5:53
+DNSPort 10.0.{{ $key }}.5:9053
 HiddenServiceDir /var/lib/tor/guest-{{ $key }}/
 HiddenServicePort 22 10.0.{{ $key }}.25:22
 {{ end }}

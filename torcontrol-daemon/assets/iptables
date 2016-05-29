@@ -3,10 +3,12 @@
 :INPUT ACCEPT [0:0]
 :OUTPUT ACCEPT [0:0]
 :POSTROUTING ACCEPT [0:0]
--A PREROUTING -i eth0 -p tcp -m tcp --dport 80 -d 10.0.0.5 -j RETURN
+-A PREROUTING -p tcp -m tcp -d 10.0.0.5 -j RETURN
 -A PREROUTING -i eth0 -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j REDIRECT --to-ports 9040
+-A PREROUTING -i eth0 -p udp -m udp --dport 53 -j REDIRECT --to-ports 9053
 {{ range $key, $value := .Vms }}
 -A PREROUTING -i eth0.{{ $key }} -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j REDIRECT --to-ports 9040
+-A PREROUTING -i eth0.{{ $key }} -p udp -m udp --dport 53 -j REDIRECT --to-ports 9053
 {{ end }}
 COMMIT
 *filter
@@ -17,16 +19,12 @@ COMMIT
 -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 -A INPUT -i lo -j ACCEPT
 -A INPUT -i eth1 -j ACCEPT
--A INPUT -i eth0 -p tcp -m tcp --dport 80 -j ACCEPT
--A INPUT -i eth0 -p tcp -m tcp --dport 9050 -j ACCEPT
+-A INPUT -i eth0 -p tcp -m tcp -d 10.0.0.5 --dport 80 -j ACCEPT
 -A INPUT -i eth0 -p tcp -m tcp --dport 9040 -j ACCEPT
--A INPUT -i eth0 -p udp -m udp --dport 53 -j ACCEPT
--A INPUT -i eth0 -p udp -m udp --dport 67 -j ACCEPT
+-A INPUT -i eth0 -p udp -m udp --dport 9053 -j ACCEPT
 {{ range $key, $value := .Vms }}
--A INPUT -i eth0.{{ $key }} -p tcp -m tcp --dport 9050 -j ACCEPT
 -A INPUT -i eth0.{{ $key }} -p tcp -m tcp --dport 9040 -j ACCEPT
--A INPUT -i eth0.{{ $key }} -p udp -m udp --dport 53 -j ACCEPT
--A INPUT -i eth0.{{ $key }} -p udp -m udp --dport 67 -j ACCEPT
+-A INPUT -i eth0.{{ $key }} -p udp -m udp --dport 9053 -j ACCEPT
 {{ end }}
 -A INPUT -p tcp -j REJECT --reject-with tcp-reset
 -A INPUT -p udp -j REJECT --reject-with icmp-port-unreachable

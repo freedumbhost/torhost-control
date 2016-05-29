@@ -119,7 +119,7 @@ func create(vmId int, v sync.Mutex) {
 	}
 
 	// Instead of restarting network, lets just run the commands to bring up that one vlan
-	err = exec.Command("vconfig", "add", "eth0", string(vmId)).Run()
+	err = exec.Command("vconfig", "add", "eth0", fmt.Sprintf("%v", vmId)).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error running vconfig", err)
 		return
@@ -129,7 +129,7 @@ func create(vmId int, v sync.Mutex) {
 		fmt.Fprintln(os.Stderr, "error running ifconfig up", err)
 		return
 	}
-	err = exec.Command("ifconfig", fmt.Sprintf("eth0.%v", vmId), fmt.Sprintf("10.0.%v.5", vmId), "255.255.255.0").Run()
+	err = exec.Command("ifconfig", fmt.Sprintf("eth0.%v", vmId), fmt.Sprintf("10.0.%v.5", vmId), "netmask", "255.255.255.0").Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error running ifconfig configuration", err)
 		return
