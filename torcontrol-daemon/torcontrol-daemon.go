@@ -1,17 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
-	"net/http"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"text/template"
-	"strconv"
-	"bytes"
-	"io/ioutil"
-	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -29,7 +29,7 @@ func main() {
 	os.Exit(run())
 }
 
-func run() (int) {
+func run() int {
 	// Create our datastructure
 	v := sync.Mutex{}
 
@@ -59,7 +59,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, v sync.Mutex) {
 		return
 	}
 
-	if (vmId < 50 || vmId > 255) {
+	if vmId < 50 || vmId > 255 {
 		fmt.Fprintf(w, "invalid")
 		return
 	}

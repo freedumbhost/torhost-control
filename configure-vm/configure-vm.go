@@ -1,14 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
-	"regexp"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"text/template"
-	"io/ioutil"
-	"bytes"
 )
 
 func main() {
@@ -25,9 +25,9 @@ func main() {
 
 	matches := re.FindStringSubmatch(cmdline)
 
-	if (matches == nil || len(matches) != 2) {
+	if matches == nil || len(matches) != 2 {
 		fmt.Println("We're not running on a provisioned VM. Nothing to do. Closing")
-		os.Exit(0);
+		os.Exit(0)
 	}
 
 	vmid, err := strconv.Atoi(matches[1])
@@ -40,7 +40,7 @@ func main() {
 		fmt.Println("Invalid vmid, outside of 1-254 range. vmid given:", vmid)
 	}
 
-	fmt.Println("Running for vmid:" , vmid)
+	fmt.Println("Running for vmid:", vmid)
 	initVM(vmid)
 }
 

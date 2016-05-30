@@ -1,19 +1,19 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
-	"net/http"
-	"strconv"
 	"regexp"
-	"errors"
+	"strconv"
 	"sync"
 	"text/template"
-	"bytes"
-	"io/ioutil"
 	"time"
-	"encoding/json"
 )
 
 // A struct to hold the list of VMs
@@ -23,14 +23,14 @@ type VMList struct {
 }
 
 type VMInformation struct {
-	URL string
+	URL    string
 	Status string
-	Id int
+	Id     int
 }
 
-func (v *VMList) addVM(vmId int, status string, url string) (error) {
+func (v *VMList) addVM(vmId int, status string, url string) error {
 	// VMs < 50 are reserved for administrative use
-	if (vmId < 50 || vmId > 254) {
+	if vmId < 50 || vmId > 254 {
 		return errors.New("invalid")
 	}
 
@@ -50,7 +50,7 @@ func (v *VMList) addVM(vmId int, status string, url string) (error) {
 	return nil // no errors
 }
 
-func (v *VMList) updateVM(vmId int, status string, url string) (error) {
+func (v *VMList) updateVM(vmId int, status string, url string) error {
 	v.mux.Lock()
 	defer v.mux.Unlock()
 
@@ -65,7 +65,7 @@ func (v *VMList) updateVM(vmId int, status string, url string) (error) {
 	return nil
 }
 
-func (v *VMList) sync() (error) {
+func (v *VMList) sync() error {
 	// Shell out to get a list of screen sessions, which are VMs
 	out, err := exec.Command("screen", "-ls").Output()
 	if err != nil {
@@ -115,7 +115,7 @@ func (v *VMList) sync() (error) {
 				status := string(body)
 				// Close the response body
 				resp.Body.Close()
-				if (status == "invalid" || status == "unknown") {
+				if status == "invalid" || status == "unknown" {
 					vminfo.Status = "broken"
 					newvms[id] = vminfo
 					continue
@@ -137,7 +137,7 @@ func main() {
 	os.Exit(run())
 }
 
-func run() (int) {
+func run() int {
 	// Get our VM struct working
 	v := VMList{Vms: make(map[int]VMInformation)}
 	v.sync()
@@ -174,7 +174,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	}
 
 	// VMs < 50 are reserved for administrative use
-	if (vmId < 50 || vmId > 254) {
+	if vmId < 50 || vmId > 254 {
 		fmt.Fprintf(w, "invalid")
 		return
 	}
@@ -326,7 +326,7 @@ func createVM(vmId int, v VMList) {
 	// Close the response body
 	resp.Body.Close()
 
-	if (status != "creating") {
+	if status != "creating" {
 		// TODO we should never get here, so handle this more strongly, it's probably an attack?
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("error talking to torcontrol, response then err: %v -- %v", status, err))
 		v.updateVM(vmId, "broken", "")
@@ -356,7 +356,7 @@ func createVM(vmId int, v VMList) {
 	// Close the response body
 	resp.Body.Close()
 
-	if (status == "invalid" || status == "unknown") {
+	if status == "invalid" || status == "unknown" {
 		// TODO we should never get here, so handle this more strongly, it's probably an attack?
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("error talking to torcontrol for hostname, response then status: %v -- %v", status, err))
 		v.updateVM(vmId, "broken", "")

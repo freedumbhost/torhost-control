@@ -25,7 +25,7 @@
 			<div class="header">
 				{{ if eq .Status "complete" }}
 				<h1>Here is your new VM!</h2>
-				<h2>{{ .URL }}</h2>
+				<h2>{{ .URL }} - {{ .Status }}</h2>
 				{{ else }}
 				<h1>Your VM is being created...</h1>
 				<h2>Status: {{ .Status }}</h2>
@@ -33,16 +33,16 @@
 			</div>
 			<div class="content">
 				{{ if eq .Status "complete" }}
-				<p>You can see the URL above there. Go ahead and SSH in as <pre>root</pre> user, with the password <pre>emuguestpassword</pre>. Feel free to change this password as you get in.</p>
+				<p>You can see the URL above there. Go ahead and SSH in as <code>root</code> user, with the password <code>emuguestpassword</code>. Feel free to change this password as you get in.</p>
 				{{ else }}
 				<p>Your VM status is as above. A new VM is normally created within 60 seconds, though this process may take more or less time depending on how overloaded the server is.<p>
-				<p>If the status is <pre>broken</pre>, our provisioning process failed. Try again, or wait for us to fix it. If the status is <pre>invalid</pre> perhaps you mangled the URL on purpose, or we have a bigger bug.</p>
+				<p>If the status is <code>broken</code>, our provisioning process failed. Try again, or wait for us to fix it. If the status is <code>invalid</code> perhaps you mangled the URL on purpose, or we have a bigger bug.</p>
 				<p>Otherwise, just refresh and get your new VM.</p>
 				{{ end }}
 				<p>Rules:</p>
 				<ul>
 					<li>No CP or shit like that</li>
-					<li>Keep the <pre>/root/.ssh/authorized_keys</pre> file as it is for now, else I'll delete it. This restriction will be removed in future.</li>
+					<li>Keep the <code>/root/.ssh/authorized_keys</code> file as it is for now, else I'll delete it. This restriction will be removed in future.</li>
 				</ul>
 				<p>You can bookmark this page to get back here in case you forget the URL but I can't promise it'll stay the same as I work on more features.</p>
 				<p>The VM may be deleted at any point, but it's unlikely to happen if you've used it in the past 24 hours (I'll delete old VMs to make room for new ones).</p>

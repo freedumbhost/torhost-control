@@ -1,17 +1,17 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
+	"html/template"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
-	"io/ioutil"
-	"path/filepath"
-	"errors"
-	"strconv"
-	"html/template"
-	"encoding/json"
 )
 
 // A struct to hold the list of VMs
@@ -21,9 +21,9 @@ type VMList struct {
 }
 
 type VMInformation struct {
-	URL string
+	URL    string
 	Status string
-	Id int
+	Id     int
 }
 
 func (v *VMList) addVM() (vmId int, err error) {
@@ -51,7 +51,7 @@ func (v *VMList) addVM() (vmId int, err error) {
 	return
 }
 
-func (v *VMList) updateVM(vmId int, status string, url string) (error) {
+func (v *VMList) updateVM(vmId int, status string, url string) error {
 	VMInfo := VMInformation{URL: url, Status: status, Id: vmId}
 	v.mux.Lock()
 	defer v.mux.Unlock()
@@ -61,7 +61,7 @@ func (v *VMList) updateVM(vmId int, status string, url string) (error) {
 	return nil
 }
 
-func (v *VMList) updateVMs(newVMList map[int]VMInformation) (error) {
+func (v *VMList) updateVMs(newVMList map[int]VMInformation) error {
 	v.mux.Lock()
 	defer v.mux.Unlock()
 
@@ -74,7 +74,7 @@ func main() {
 	os.Exit(run())
 }
 
-func run() (int) {
+func run() int {
 	// Create our datastructure
 	v := VMList{Vms: make(map[int]VMInformation)}
 
@@ -116,7 +116,7 @@ func run() (int) {
 	return 0
 }
 
-func syncWithHypervisor(v VMList) (error) {
+func syncWithHypervisor(v VMList) error {
 	// Get the updated list from the hypervisor daemon
 	resp, err := http.Get("http://10.0.5.20/sync")
 	if err != nil {
@@ -229,7 +229,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 		http.Error(w, "Invalid VM specified", http.StatusInternalServerError)
 		return
 	}
-	if (vmId < 100 || vmId > 254) {
+	if vmId < 100 || vmId > 254 {
 		http.Error(w, "Invalid VM specified", http.StatusInternalServerError)
 		return
 	}
@@ -253,7 +253,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 
 	// Parse the status so we can build the proper representation
 	url := ""
-	if !(status == "creating" || status == "broken") {
+	if !(status == "creating" || status == "broken" || status == "invalid") {
 		url = status
 		status = "complete"
 	}
@@ -327,5 +327,3 @@ func indexHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 		return
 	}
 }
-
-
