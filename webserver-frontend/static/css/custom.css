@@ -1,0 +1,20 @@
+#layout {
+	position: relative;
+	padding-left: 205px;
+	left: 0;
+}
+
+#menu {
+	left: 205px;
+	margin-left: -205px;
+	width: 205px;
+	background-color: #191818;
+	position: fixed;
+	top: 0;
+	bottom: 0;
+	z-index: 1000;
+}
+
+#main {
+	padding: 0 20px;
+}

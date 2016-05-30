@@ -7,24 +7,67 @@ import (
 	"sync"
 	"time"
 	"io/ioutil"
+	"path/filepath"
+	"errors"
+	"strconv"
 	"html/template"
+	"encoding/json"
 )
 
-type VMInformation struct {
+// A struct to hold the list of VMs
+type VMList struct {
 	mux sync.Mutex
-	// TODO: Replace this map with more useful information (creation date etc)
-	vms map[int]string
+	Vms map[int]VMInformation
 }
 
-func (v *VMInformation) addVM() (vmId int) {
+type VMInformation struct {
+	URL string
+	Status string
+	Id int
+}
+
+func (v *VMList) addVM() (vmId int, err error) {
 	v.mux.Lock()
+	defer v.mux.Unlock()
 
-	// Find the next ID we can use
-	vmId = 100 + len(v.vms)
-	v.vms[vmId] = "Placeholder"
+	vmId = 0
+	err = nil
+	for i := 100; i < 254; i++ {
+		if _, exists := v.Vms[i]; !exists {
+			vmId = i
+			break
+		}
+	}
 
-	v.mux.Unlock()
+	if vmId == 0 {
+		err = errors.New("no free hosts")
+		return
+	}
+
+	// Instantiate a new VMInformation with the given ID
+	vmInfo := VMInformation{Id: vmId}
+	v.Vms[vmId] = vmInfo
+
 	return
+}
+
+func (v *VMList) updateVM(vmId int, status string, url string) (error) {
+	VMInfo := VMInformation{URL: url, Status: status, Id: vmId}
+	v.mux.Lock()
+	defer v.mux.Unlock()
+
+	v.Vms[vmId] = VMInfo
+
+	return nil
+}
+
+func (v *VMList) updateVMs(newVMList map[int]VMInformation) (error) {
+	v.mux.Lock()
+	defer v.mux.Unlock()
+
+	v.Vms = newVMList
+
+	return nil
 }
 
 func main() {
@@ -33,8 +76,28 @@ func main() {
 
 func run() (int) {
 	// Create our datastructure
-	v := VMInformation{vms: make(map[int]string)}
-	v.addVM() // Create the VM we know exists as VM 100
+	v := VMList{Vms: make(map[int]VMInformation)}
+
+	// Sync our list of VMs with the hypervisor
+	err := syncWithHypervisor(v)
+	if err != nil {
+		fmt.Printf("Error syncing with hypervisor: %v", err)
+		return 1
+	}
+
+	// Register handlers for our static files
+	registerStaticFiles()
+
+	// TODO Template caching
+	// TODO A nicer 404 and 5XX page
+
+	http.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+		aboutHandler(w, r, v)
+	})
+
+	http.HandleFunc("/contact", func(w http.ResponseWriter, r *http.Request) {
+		contactHandler(w, r, v)
+	})
 
 	http.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
 		createHandler(w, r, v)
@@ -53,69 +116,216 @@ func run() (int) {
 	return 0
 }
 
-func createHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
-	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
-	if len(v.vms) >= 5 {
-		fmt.Fprintf(w, "<h1>Too many VMs are already running. Come back later</h1>")
-	} else {
-		vmId := v.addVM()
-		// fire off the request
-		resp, err := http.Get(fmt.Sprintf("http://10.0.5.20/create/%v", vmId))
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error talking to hypervisor-daemon (create): %v", err)
-			fmt.Fprintf(w, "shits fucked m8, come back later")
-			return
-		}
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error reading response from hypervisor-daemon (create): %v", err)
-			fmt.Fprintf(w, "shits fucked m8, come back later")
-			return
-		}
+func syncWithHypervisor(v VMList) (error) {
+	// Get the updated list from the hypervisor daemon
+	resp, err := http.Get("http://10.0.5.20/sync")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error talking to hypervisor-daemon (sync) - %v", time.Now(), err))
+		return errors.New("talking to hypervisor-daemon")
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error reading response from hypervisor-daemon (sync) - %v", time.Now(), err))
+		return errors.New("Error reading response from hypervisor-daemon")
+	}
 
-		status := string(body)
-		if status != "creating" {
-			fmt.Fprintln(os.Stderr, "unexpected response from create hypervisor-daemon: %v", status)
-			fmt.Fprintf(w, "shits fucked m8, come back later")
-			return
-		}
+	var InterVms map[string]VMInformation
+	err = json.Unmarshal(body, &InterVms)
+	if err != nil {
+		return err
+	}
 
-		http.Redirect(w, r, fmt.Sprintf("/view/%v", vmId), http.StatusFound)
+	Vms := make(map[int]VMInformation)
+	for _, value := range InterVms {
+		Vms[value.Id] = value
+	}
+
+	v.updateVMs(Vms)
+	return nil
+}
+
+func registerStaticFiles() {
+	// Loop over the static directory
+	err := filepath.Walk("static/", func(path string, f os.FileInfo, err error) error {
+		if !f.IsDir() {
+			// Get the filename without the prefix
+			filename := path[len("static"):]
+			// Register a handler to do the right thing for this
+			http.HandleFunc(filename, func(w http.ResponseWriter, r *http.Request) {
+				// Output the file
+				http.ServeFile(w, r, fmt.Sprintf("static/%v", r.URL.Path))
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		panic("Could not walk the filesystem for static files")
 	}
 }
 
-func viewHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
+func createHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
-	vmId := r.URL.Path[len("/view/"):]
-	fmt.Fprintf(w, "<h1>VM created. ID: %v</h1>", vmId)
 
-	// find out what the status is and print it
-	resp, err := http.Get(fmt.Sprintf("http://10.0.5.20/view/%v", vmId))
+	// Check we don't have too many VMs running
+	if len(v.Vms) >= 10 {
+		// Render the "too many" template
+		t, err := template.ParseFiles("templates/create-toomany.html")
+		if err != nil {
+			fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
+			http.Error(w, "Error", http.StatusInternalServerError)
+			return
+		}
+		err = t.Execute(w, nil)
+		if err != nil {
+			fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
+			http.Error(w, "Error", http.StatusInternalServerError)
+			return
+		}
+		// Template rendered, we're done
+		return
+	}
+
+	// Add it to our internal tracking
+	vmId, err := v.addVM()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error talking to hypervisor-daemon: %v", err)
-		fmt.Fprintf(w, "shits fucked m8, come back later")
+		fmt.Println(fmt.Sprintf("[%v] Could not execute v.addVM() - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Talk to the hypervisor about creating the new VM
+	resp, err := http.Get(fmt.Sprintf("http://10.0.5.20/create/%v", vmId))
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error talking to hypervisor-daemon (create) - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error reading response from hypervisor-daemon: %v", err)
-		fmt.Fprintf(w, "shits fucked m8, come back later")
+		fmt.Println(fmt.Sprintf("[%v] Error reading response from hypervisor-daemon (create) - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	status := string(body)
+	if status != "creating" {
+		fmt.Println(fmt.Sprintf("[%v] Unexpected response from hypervisor-daemon (create) - %v", time.Now(), status))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/view/%v", vmId), http.StatusFound)
+}
+
+func viewHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
+	vmIdString := r.URL.Path[len("/view/"):]
+
+	// Validate the vmId
+	vmId, err := strconv.Atoi(vmIdString)
+	if err != nil {
+		http.Error(w, "Invalid VM specified", http.StatusInternalServerError)
+		return
+	}
+	if (vmId < 100 || vmId > 254) {
+		http.Error(w, "Invalid VM specified", http.StatusInternalServerError)
+		return
+	}
+
+	// Resync the status of this VM with the hypervisor
+	resp, err := http.Get(fmt.Sprintf("http://10.0.5.20/view/%v", vmId))
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error talking to hypervisor-daemon (view) - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error reading response from hypervisor-daemon (view) - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
 		return
 	}
 
 	status := string(body)
 
-	fmt.Fprintf(w, "here's a janky status of the VM if it's not created, or the hostname if it is: %v", status)
-	fmt.Fprintf(w, "login as root@whatever, password is: emuguestpassword -- you're welcome to change this (please do)")
-	fmt.Fprintf(w, "anything likely to attract LEA, I delete your VM. pls no cp. remove my SSH key from root's authorized keys, I delete your VM (for now, I will remove this restriction later)")
+	// Parse the status so we can build the proper representation
+	url := ""
+	if !(status == "creating" || status == "broken") {
+		url = status
+		status = "complete"
+	}
+	v.updateVM(vmId, status, url)
 
+	// Render the template
+	t, err := template.ParseFiles("templates/view.html")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+	err = t.Execute(w, v.Vms[vmId])
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
 }
 
-func indexHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
+func aboutHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
-	fmt.Fprintf(w, "<h1>Free Dumb Hosting</h1>There are currently %v VMs running. <a href='/create'>Create a new VM</a>. no illegal stuff pls, no cp etc. <br> more features, like being able to host a website instead of just a shell, coming later", len(v.vms))
+
+	// Render the template
+	t, err := template.ParseFiles("templates/about.html")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+	err = t.Execute(w, nil)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+}
+
+func contactHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
+
+	// Render the template
+	t, err := template.ParseFiles("templates/contact.html")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+	err = t.Execute(w, nil)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
+
+	// Render the template
+	t, err := template.ParseFiles("templates/index.html")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+	err = t.Execute(w, nil)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
 }
 
 

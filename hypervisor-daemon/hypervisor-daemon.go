@@ -13,15 +13,22 @@ import (
 	"bytes"
 	"io/ioutil"
 	"time"
+	"encoding/json"
 )
 
-type VMInformation struct {
+// A struct to hold the list of VMs
+type VMList struct {
 	mux sync.Mutex
-	// This map is id => state (should be an enum I guess)
-	Vms map[int]string
+	Vms map[int]VMInformation
 }
 
-func (v *VMInformation) addVM(vmId int, state string) (error) {
+type VMInformation struct {
+	URL string
+	Status string
+	Id int
+}
+
+func (v *VMList) addVM(vmId int, status string, url string) (error) {
 	// VMs < 50 are reserved for administrative use
 	if (vmId < 50 || vmId > 254) {
 		return errors.New("invalid")
@@ -37,12 +44,13 @@ func (v *VMInformation) addVM(vmId int, state string) (error) {
 	}
 
 	// It's both valid and not in use!
-	v.Vms[vmId] = state
+	vm := VMInformation{Id: vmId, Status: status, URL: url}
+	v.Vms[vmId] = vm
 
 	return nil // no errors
 }
 
-func (v *VMInformation) updateVM(vmId int, state string) (error) {
+func (v *VMList) updateVM(vmId int, status string, url string) (error) {
 	v.mux.Lock()
 	defer v.mux.Unlock()
 
@@ -51,12 +59,13 @@ func (v *VMInformation) updateVM(vmId int, state string) (error) {
 		return errors.New("Invalid vmId specified")
 	}
 
-	v.Vms[vmId] = state
+	VMInfo := VMInformation{URL: url, Status: status, Id: vmId}
+	v.Vms[vmId] = VMInfo
 
 	return nil
 }
 
-func (v *VMInformation) sync() (error) {
+func (v *VMList) sync() (error) {
 	// Shell out to get a list of screen sessions, which are VMs
 	out, err := exec.Command("screen", "-ls").Output()
 	if err != nil {
@@ -64,7 +73,7 @@ func (v *VMInformation) sync() (error) {
 	}
 
 	// Our new map
-	newvms := make(map[int]string)
+	newvms := make(map[int]VMInformation)
 
 	// Regex out the running VM IDs
 	re := regexp.MustCompile(`\b\.vm([0-9]+)\b`)
@@ -79,11 +88,41 @@ func (v *VMInformation) sync() (error) {
 		// Ignore invalid VMs
 		id, err := strconv.Atoi(matches[i][1])
 		if err == nil {
+			// Create a new struct for it
 			// Only get the state of it already exists
+			var vminfo VMInformation
 			if val, ok := v.Vms[id]; ok {
-				newvms[id] = val
+				vminfo = val
 			} else {
-				newvms[id] = "running"
+				vminfo = VMInformation{Id: id, Status: "running"}
+			}
+			// Look up the URL if required
+			if newvms[id].URL == "" {
+				resp, err := http.Get(fmt.Sprintf("http://10.0.0.5/view/%v", id))
+				if err != nil {
+					vminfo.Status = "broken"
+					newvms[id] = vminfo
+					fmt.Fprintln(os.Stderr, "error talking to torcontrol: %v", err)
+					continue
+				}
+				body, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					vminfo.Status = "broken"
+					newvms[id] = vminfo
+					fmt.Fprintln(os.Stderr, "error getting response from torcontrol: %v", err)
+					continue
+				}
+				status := string(body)
+				// Close the response body
+				resp.Body.Close()
+				if (status == "invalid" || status == "unknown") {
+					vminfo.Status = "broken"
+					newvms[id] = vminfo
+					continue
+				}
+				vminfo.URL = status
+				vminfo.Status = "running"
+				newvms[id] = vminfo
 			}
 		}
 	}
@@ -100,7 +139,7 @@ func main() {
 
 func run() (int) {
 	// Get our VM struct working
-	v := VMInformation{Vms: make(map[int]string)}
+	v := VMList{Vms: make(map[int]VMInformation)}
 	v.sync()
 
 	// Get the current numbers and data about VMs
@@ -124,7 +163,7 @@ func run() (int) {
 	return 0
 }
 
-func viewHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
+func viewHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 	vmIdStr := r.URL.Path[len("/view/"):]
 	vmId, err := strconv.Atoi(vmIdStr)
@@ -147,14 +186,26 @@ func viewHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
 	}
 
 	// valid and running
-	fmt.Fprintf(w, v.Vms[vmId])
+	fmt.Fprintf(w, v.Vms[vmId].URL)
 }
 
-func syncHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
-	// TODO: implement
+func syncHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+	v.sync()
+	// build a new map of data that json can encode
+	inter := make(map[string]VMInformation)
+	for k, value := range v.Vms {
+		inter[strconv.Itoa(k)] = value
+	}
+	// json encode our data and write it out
+	b, err := json.Marshal(inter)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error json encoding our VMs: %v", err)
+		return
+	}
+	w.Write(b)
 }
 
-func createHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
+func createHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 	vmIdStr := r.URL.Path[len("/create/"):]
 	vmId, err := strconv.Atoi(vmIdStr)
@@ -164,7 +215,7 @@ func createHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
 		return
 	}
 
-	err = v.addVM(vmId, "creating")
+	err = v.addVM(vmId, "creating", "")
 	if err != nil {
 		fmt.Fprintf(w, fmt.Sprintf("%v", err))
 		return
@@ -176,14 +227,14 @@ func createHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
 	fmt.Fprintf(w, "creating")
 }
 
-func createVM(vmId int, v VMInformation) {
+func createVM(vmId int, v VMList) {
 	// This function assumes it's already been put into VMInformation
 	// TODO: Write a validator for above asumption ^
 
 	// Create a new directory for the VM disk image
 	err := os.Mkdir(fmt.Sprintf("/root/vm-images/vm%v", vmId), 0755)
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintf(os.Stderr, "error creating disk image directory for new VM: %v", err)
 		return
 	}
@@ -191,7 +242,7 @@ func createVM(vmId int, v VMInformation) {
 	// Create new disk image
 	err = exec.Command("qemu-img", "create", "-f", "qcow2", "-o", "backing_file=/root/vm-images/base-gentoo-vanilla-v2.img", fmt.Sprintf("/root/vm-images/vm%v/vm%v-gentoo-vanilla-v2.img", vmId, vmId)).Run()
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintf(os.Stderr, "error creating disk image for new VM: %v", err)
 		return
 	}
@@ -200,14 +251,14 @@ func createVM(vmId int, v VMInformation) {
 	// TODO: Do we need to lock the datastructure here? We might write network information for a VM that isn't made yet
 	t, err := template.ParseFiles("assets/net")
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintf(os.Stderr, "error creating template for new VM: %v", err)
 		return
 	}
 	var net bytes.Buffer
 	err = t.Execute(&net, v)
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintf(os.Stderr, "error executing template for new VM: %v", err)
 		return
 	}
@@ -215,7 +266,7 @@ func createVM(vmId int, v VMInformation) {
 	// Write the file
 	err = ioutil.WriteFile("/etc/conf.d/net", net.Bytes(), 0644)
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintf(os.Stderr, "error writing net template for new VM: %v", err)
 		return
 	}
@@ -223,7 +274,7 @@ func createVM(vmId int, v VMInformation) {
 	// Create the symlink for the bridge
 	err = os.Symlink("/etc/init.d/net.lo", fmt.Sprintf("/etc/init.d/net.br%v", vmId))
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintf(os.Stderr, "error creating bridge symilnk for new VM: %v", err)
 		return
 	}
@@ -231,7 +282,7 @@ func createVM(vmId int, v VMInformation) {
 	// Manually bring up the new vlan
 	out, err := exec.Command("ip", "link", "add", "link", "enp4s0", "name", fmt.Sprintf("enp4s0.%v", vmId), "type", "vlan", "id", fmt.Sprintf("%v", vmId)).Output()
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("error adding new vlan: %v %s", err, out))
 		return
 	}
@@ -239,7 +290,7 @@ func createVM(vmId int, v VMInformation) {
 	// Activate the new bridge
 	err = exec.Command(fmt.Sprintf("/etc/init.d/net.br%v", vmId), "start").Run()
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, "error executing bridge restart for new VM: %v", err)
 		return
 	}
@@ -250,40 +301,21 @@ func createVM(vmId int, v VMInformation) {
 	out, err = cmd.Output()
 	outStr := string(out)
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, "error starting screen session for new VM: %v \r\nadditional: %v", err, outStr)
 		return
 	}
 
-/*
-	// TODO Finish writing part that SSHs in and changes password
-	// Lets wait until the VM has its networking set up (timeout if required)
-	time.Sleep(60 * time.Second)
-
-	worked := false
-	// TODO Determine if best to use a ticker or sleep here
-	for i := 0; i < 5; i++ {
-		// SSH in and do the final configuraion
-		time.Sleep(30 * time.Second)
-	}
-	if !worked {
-		// TODO Write a better cleanup here, as this is clearly taking up space...
-		v.updateVM(vmId, "broken")
-		fmt.Fprintln(os.Stderr, "error could not connect to SSH within 3 minutes -- manual cleanup required")
-		return
-	}
-	*/
-
 	// Talk to the raspberry pi about getting a new Tor set up
 	resp, err := http.Get(fmt.Sprintf("http://10.0.0.5/create/%v", vmId))
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, "error talking to torcontrol: %v", err)
 		return
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, "error getting response from torcontrol: %v", err)
 		return
 	}
@@ -297,7 +329,7 @@ func createVM(vmId int, v VMInformation) {
 	if (status != "creating") {
 		// TODO we should never get here, so handle this more strongly, it's probably an attack?
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("error talking to torcontrol, response then err: %v -- %v", status, err))
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		return
 	}
 
@@ -307,13 +339,13 @@ func createVM(vmId int, v VMInformation) {
 	// fetch the hostname
 	resp, err = http.Get(fmt.Sprintf("http://10.0.0.5/view/%v", vmId))
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, "error talking to torcontrol: %v", err)
 		return
 	}
 	body, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, "error getting response from torcontrol: %v", err)
 		return
 	}
@@ -327,10 +359,10 @@ func createVM(vmId int, v VMInformation) {
 	if (status == "invalid" || status == "unknown") {
 		// TODO we should never get here, so handle this more strongly, it's probably an attack?
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("error talking to torcontrol for hostname, response then status: %v -- %v", status, err))
-		v.updateVM(vmId, "broken")
+		v.updateVM(vmId, "broken", "")
 		return
 	}
 
 	// Update VM status to be the onion address
-	v.updateVM(vmId, status)
+	v.updateVM(vmId, "complete", status)
 }

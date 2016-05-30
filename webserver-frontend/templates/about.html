@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="x-ua-compatible" content="ie=edge">
+	<title>About | Free Dumb Hosting</title>
+	<link rel="stylesheet" href="/css/pure-min.css">
+	<link rel="stylesheet" href="/css/custom.css">
+	<!-- A base tag, so we can easily use the 'right' URL -->
+	<base href="http://freedumbz7seqv3r.onion/">
+</head>
+<body>
+	<div id="layout">
+		<div id="menu">
+			<div class="pure-menu">
+				<a class="pure-menu-heading" href="/">Free Dumb Hosting</a>
+				<ul class="pure-menu-list">
+					<li class="pure-menu-item"><a href="/create" class="pure-menu-link">Create a VM</a></li>
+					<li class="pure-menu-item"><a href="/about" class="pure-menu-link pure-menu-selected">About</a></li>
+					<li class="pure-menu-item"><a href="/contact" class="pure-menu-link">Contact</a></li>
+				</ul>
+			</div>
+		</div>
+		<div id="main">
+			<div class="header">
+				<h1>Torified hosting</h2>
+			</div>
+			<div class="content">
+				<p>Design documentation and code will come later, but the internetion is that every connection can only be made with Tor. <br>
+				For now, you can see some scripts and configuration on <a href="https://github.com/freedumbhost">Free Dumb Host's Github</a></p>
+				<p>The service is configured to only be accessible through tor, and servers are only able to make outgoing connections through Tor.<br>
+				This means even if you hosted an insecure application, you simply cannot leak a real world IP address.</p>
+				<p>It's based off something like the grugqs Portal of Pi, with a lot of qemu and vlanning spiced through it.</p>
+				<p>Speaking of, if you do manage to break it, let me know I guess so I can patch it.</p>
+			</div>
+		</div>
+	</div>
+</body>
+</html>
