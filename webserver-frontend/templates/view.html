@@ -33,7 +33,7 @@
 			</div>
 			<div class="content">
 				{{ if eq .Status "complete" }}
-				<p>You can see the URL above there. Go ahead and SSH in as <code>root</code> user, with the password <code>emuguestpassword</code>. Feel free to change this password as you get in.</p>
+				<p>You can see the URL above there (or if you can't, please wait a minute then refresh). Go ahead and SSH in as <code>root</code> user, with the password <code>emuguestpassword</code>. Feel free to change this password as you get in.</p>
 				{{ else }}
 				<p>Your VM status is as above. A new VM is normally created within 60 seconds, though this process may take more or less time depending on how overloaded the server is.<p>
 				<p>If the status is <code>broken</code>, our provisioning process failed. Try again, or wait for us to fix it. If the status is <code>invalid</code> perhaps you mangled the URL on purpose, or we have a bigger bug.</p>
