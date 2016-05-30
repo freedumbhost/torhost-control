@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 	"io/ioutil"
+	"html/template"
 )
 
 type VMInformation struct {

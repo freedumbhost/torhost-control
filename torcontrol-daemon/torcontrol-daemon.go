@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type VMInformation struct {
@@ -48,8 +49,9 @@ func run() (int) {
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request, v sync.Mutex) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 	// Get the ID of the new VM
-	vmIdStr := r.URL.Path[len("/create/"):]
+	vmIdStr := r.URL.Path[len("/view/"):]
 	vmId, err := strconv.Atoi(vmIdStr)
 	// Check whether the ID is valid
 	if err != nil {
@@ -75,6 +77,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, v sync.Mutex) {
 }
 
 func createHandler(w http.ResponseWriter, r *http.Request, v sync.Mutex) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 	// TODO In the future we will allow more than just sshd port to be a hidden service
 	// Lock to be safe (unlock in the actual create goroutine)
 	v.Lock()
@@ -206,7 +209,7 @@ func create(vmId int, v sync.Mutex) {
 	// Send SIGHUP to Tor
 	// From docs: The signal instructs Tor to reload its configuration (including closing and reopening logs), and kill and restart its helper processes if applicable.
 	// TODO Look into using control port to make changes without a reload required
-	err = exec.Command("pkill", "-SIGHUP", "tor").Run()
+	err = exec.Command("pkill", "-SIGHUP", "tor$").Run()
 	if err != nil {
 		// TODO More graceful handling of this. If tor is down, HOLY SHIT FIRE
 		fmt.Fprintln(os.Stderr, "error executing tor restart for new VM: %v", err)

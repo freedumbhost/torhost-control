@@ -202,6 +202,10 @@ VirtualAddrNetworkIPv4 10.192.0.0/10
 
 ## Manual configuration
 
+## Support for FreeDumb URL (vm5)
+HiddenServiceDir /var/lib/tor/freedumb/
+HiddenServicePort 80 10.0.5.25:80
+
 ## TODO Replace this with automated when we can support more than just sshd hidden services
 HiddenServiceDir /var/lib/tor/guest-5/
 HiddenServicePort 80 10.0.5.25:80

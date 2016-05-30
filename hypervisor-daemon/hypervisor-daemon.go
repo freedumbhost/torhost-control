@@ -125,6 +125,7 @@ func run() (int) {
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 	vmIdStr := r.URL.Path[len("/view/"):]
 	vmId, err := strconv.Atoi(vmIdStr)
 	// Check whether the ID is valid
@@ -154,6 +155,7 @@ func syncHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
 }
 
 func createHandler(w http.ResponseWriter, r *http.Request, v VMInformation) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 	vmIdStr := r.URL.Path[len("/create/"):]
 	vmId, err := strconv.Atoi(vmIdStr)
 	// Check whether the ID is valid
@@ -294,7 +296,7 @@ func createVM(vmId int, v VMInformation) {
 
 	if (status != "creating") {
 		// TODO we should never get here, so handle this more strongly, it's probably an attack?
-		fmt.Fprintln(os.Stderr, "error talking to torcontrol, response: %v", err)
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("error talking to torcontrol, response then err: %v -- %v", status, err))
 		v.updateVM(vmId, "broken")
 		return
 	}
@@ -324,7 +326,7 @@ func createVM(vmId int, v VMInformation) {
 
 	if (status == "invalid" || status == "unknown") {
 		// TODO we should never get here, so handle this more strongly, it's probably an attack?
-		fmt.Fprintln(os.Stderr, "error talking to torcontrol, response: %v", err)
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("error talking to torcontrol for hostname, response then status: %v -- %v", status, err))
 		v.updateVM(vmId, "broken")
 		return
 	}
