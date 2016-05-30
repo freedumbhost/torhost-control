@@ -1,1 +1,6 @@
 *.swp
+# until we work out a proper way to build the go binaries, remove their binaries one by one
+/configure-vm/configure-vm
+/hypervisor-daemon/hypervisor-daemon
+/torcontrol-daemon/torcontrol-daemon
+/webserver-frontend/webserver-frontend
