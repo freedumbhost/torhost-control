@@ -95,8 +95,10 @@ func run() int {
 		aboutHandler(w, r, v)
 	})
 
+	// the contact page requires a mutex for processing the input
+	var cm sync.Mutex
 	http.HandleFunc("/contact", func(w http.ResponseWriter, r *http.Request) {
-		contactHandler(w, r, v)
+		contactHandler(w, r, cm)
 	})
 
 	http.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
@@ -292,8 +294,45 @@ func aboutHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	}
 }
 
-func contactHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+func contactHandler(w http.ResponseWriter, r *http.Request, cm sync.Mutex) {
 	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
+
+	// Check for form submission, etc
+	err := r.ParseForm()
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse form data - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	sent_message := false
+
+	// Technically they might have submitted an empty message, but we'll ignore that possibility
+	if val, ok := r.Form["message"]; ok {
+		// TODO Check if the message is blank
+
+		// They submitted a message. Process it, then display a notification
+		cm.Lock()
+		defer cm.Unlock()
+
+		// Just write it to a temporary file
+		file, err := ioutil.TempFile("messages/", "msg-")
+		if err != nil {
+			fmt.Println(fmt.Sprintf("[%v] Could create temporary file - %v", time.Now(), err))
+			http.Error(w, "Error", http.StatusInternalServerError)
+			return
+		}
+
+		// Write out the data
+		_, err = file.Write([]byte(val[0]))
+		if err != nil {
+			fmt.Println(fmt.Sprintf("[%v] Could write temporary file form data - %v", time.Now(), err))
+			http.Error(w, "Error", http.StatusInternalServerError)
+			return
+		}
+
+		sent_message = true
+	}
 
 	// Render the template
 	t, err := template.ParseFiles("templates/contact.html")
@@ -302,7 +341,7 @@ func contactHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 		http.Error(w, "Error", http.StatusInternalServerError)
 		return
 	}
-	err = t.Execute(w, nil)
+	err = t.Execute(w, sent_message)
 	if err != nil {
 		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
 		http.Error(w, "Error", http.StatusInternalServerError)

@@ -18,3 +18,18 @@
 #main {
 	padding: 0 20px;
 }
+
+/* contact page */
+.pure-form textarea {
+	max-width: 700px;
+	width: 100%;
+}
+
+/* typography */
+#menu .pure-menu-selected .pure-menu-link {
+	color: #ccc;
+}
+
+#menu .pure-menu-selected .pure-menu-link:hover {
+	color: #777;
+}
