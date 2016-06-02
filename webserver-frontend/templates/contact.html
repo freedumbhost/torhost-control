@@ -30,8 +30,11 @@
 				<h1>Contact</h2>
 			</div>
 			<div class="content">
-				{{ if . }}
+				{{ if eq . "yes" }}
 					<p>Message sent successfully.</p>
+				{{ end }}
+				{{ if eq . "empty" }}
+					<p>Message was empty.</p>
 				{{ end }}
 				<p>Submit this form and I'll receive your message. Note that these messages are currently stored unencrypted in plaintext on this server (if you care about that). Eventually I'll put up GPG information. If you want or require a response, please include contact information.</p>
 				<form class="pure-form pure-form-stacked" method="post" action="/contact">

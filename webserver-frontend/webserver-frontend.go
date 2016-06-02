@@ -305,33 +305,37 @@ func contactHandler(w http.ResponseWriter, r *http.Request, cm sync.Mutex) {
 		return
 	}
 
-	sent_message := false
+	// TODO Investigate a better way to display the information
+	sent_message := "none"
 
 	// Technically they might have submitted an empty message, but we'll ignore that possibility
 	if val, ok := r.Form["message"]; ok {
 		// TODO Check if the message is blank
+		if val[0] == "" {
+			sent_message = "empty"
+		} else {
+			// They submitted a message. Process it, then display a notification
+			cm.Lock()
+			defer cm.Unlock()
 
-		// They submitted a message. Process it, then display a notification
-		cm.Lock()
-		defer cm.Unlock()
+			// Just write it to a temporary file
+			file, err := ioutil.TempFile("messages/", "msg-")
+			if err != nil {
+				fmt.Println(fmt.Sprintf("[%v] Could create temporary file - %v", time.Now(), err))
+				http.Error(w, "Error", http.StatusInternalServerError)
+				return
+			}
 
-		// Just write it to a temporary file
-		file, err := ioutil.TempFile("messages/", "msg-")
-		if err != nil {
-			fmt.Println(fmt.Sprintf("[%v] Could create temporary file - %v", time.Now(), err))
-			http.Error(w, "Error", http.StatusInternalServerError)
-			return
+			// Write out the data
+			_, err = file.Write([]byte(val[0]))
+			if err != nil {
+				fmt.Println(fmt.Sprintf("[%v] Could write temporary file form data - %v", time.Now(), err))
+				http.Error(w, "Error", http.StatusInternalServerError)
+				return
+			}
+
+			sent_message = "yes"
 		}
-
-		// Write out the data
-		_, err = file.Write([]byte(val[0]))
-		if err != nil {
-			fmt.Println(fmt.Sprintf("[%v] Could write temporary file form data - %v", time.Now(), err))
-			http.Error(w, "Error", http.StatusInternalServerError)
-			return
-		}
-
-		sent_message = true
 	}
 
 	// Render the template
