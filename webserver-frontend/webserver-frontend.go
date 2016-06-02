@@ -155,6 +155,8 @@ func registerStaticFiles() {
 			filename := path[len("static"):]
 			// Register a handler to do the right thing for this
 			http.HandleFunc(filename, func(w http.ResponseWriter, r *http.Request) {
+				// Cache our static files for a while
+				w.Header().Set("Cache-Control", "public, max-age=3600")
 				// Output the file
 				http.ServeFile(w, r, fmt.Sprintf("static/%v", r.URL.Path))
 			})
