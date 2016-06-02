@@ -4,3 +4,5 @@
 /hypervisor-daemon/hypervisor-daemon
 /torcontrol-daemon/torcontrol-daemon
 /webserver-frontend/webserver-frontend
+/webserver-frontend/webserver-configure
+/webserver-frontend/config/

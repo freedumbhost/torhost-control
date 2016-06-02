@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gorilla/mux"
+	"github.com/gorilla/sessions"
 	"html/template"
 	"io/ioutil"
 	"net/http"
@@ -13,6 +15,9 @@ import (
 	"sync"
 	"time"
 )
+
+// Our global session store
+var store *sessions.FilesystemStore
 
 // A struct to hold the list of VMs
 type VMList struct {
@@ -75,45 +80,72 @@ func main() {
 }
 
 func run() int {
+	// Set up our session configuration
+	authKey, err := ioutil.ReadFile("config/auth.key")
+	if err != nil {
+		fmt.Println("Could not read auth.key")
+		return 1
+	}
+	encKey, err := ioutil.ReadFile("config/enc.key")
+	if err != nil {
+		fmt.Println("Could not read enc.key")
+		return 1
+	}
+
+	store = sessions.NewFilesystemStore("", authKey, encKey)
+
 	// Create our datastructure
 	v := VMList{Vms: make(map[int]VMInformation)}
 
 	// Sync our list of VMs with the hypervisor
-	err := syncWithHypervisor(v)
+	err = syncWithHypervisor(v)
 	if err != nil {
 		fmt.Printf("Error syncing with hypervisor: %v", err)
 		return 1
 	}
 
-	// Register handlers for our static files
-	registerStaticFiles()
+	// Set up our session store(s)
 
 	// TODO Template caching
 	// TODO A nicer 404 and 5XX page
+	// TODO use mux properly
 
-	http.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+	r := mux.NewRouter()
+
+	// Register handlers for our static files
+	registerStaticFiles(r)
+
+	r.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
 		aboutHandler(w, r, v)
 	})
 
 	// the contact page requires a mutex for processing the input
 	var cm sync.Mutex
-	http.HandleFunc("/contact", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/contact", func(w http.ResponseWriter, r *http.Request) {
 		contactHandler(w, r, cm)
 	})
 
-	http.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
 		createHandler(w, r, v)
 	})
 
-	http.HandleFunc("/view/", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/view/{id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
 		viewHandler(w, r, v)
 	})
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		loginHandler(w, r, v)
+	})
+
+	r.HandleFunc("/manage", func(w http.ResponseWriter, r *http.Request) {
+		manageHandler(w, r, v)
+	})
+
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		indexHandler(w, r, v)
 	})
 
-	http.ListenAndServe(":80", nil)
+	http.ListenAndServe(":80", r)
 
 	return 0
 }
@@ -147,14 +179,14 @@ func syncWithHypervisor(v VMList) error {
 	return nil
 }
 
-func registerStaticFiles() {
+func registerStaticFiles(r *mux.Router) {
 	// Loop over the static directory
 	err := filepath.Walk("static/", func(path string, f os.FileInfo, err error) error {
 		if !f.IsDir() {
 			// Get the filename without the prefix
 			filename := path[len("static"):]
 			// Register a handler to do the right thing for this
-			http.HandleFunc(filename, func(w http.ResponseWriter, r *http.Request) {
+			r.HandleFunc(filename, func(w http.ResponseWriter, r *http.Request) {
 				// Cache our static files for a while
 				w.Header().Set("Cache-Control", "public, max-age=3600")
 				// Output the file
@@ -166,6 +198,83 @@ func registerStaticFiles() {
 	if err != nil {
 		panic("Could not walk the filesystem for static files")
 	}
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
+
+	session, err := store.Get(r, "torcontrol-session")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error opening session (login)  - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	if session.Values["vmId"] != nil {
+		// A session is already created, lets just redirect
+		http.Redirect(w, r, "/manage", http.StatusFound)
+		return
+	}
+	// Check if we need to process the login
+	err = r.ParseForm()
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse form data (login) - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	login_attempt := false
+
+	if val, ok := r.Form["password"]; ok {
+		// TODO: Proper login system
+		if val[0] == "secret" {
+			session.Values["vmId"] = 1
+			err := session.Save(r, w)
+			if err != nil {
+				fmt.Println(fmt.Sprintf("[%v] Could not save session - %v", time.Now(), err))
+				http.Error(w, "Error", http.StatusInternalServerError)
+				return
+			}
+			// Redirect to logged in page
+			http.Redirect(w, r, "/manage", http.StatusFound)
+			return // We're done!
+		}
+		login_attempt = true
+	}
+
+	// Render the template
+	t, err := template.ParseFiles("templates/login.html")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+	err = t.Execute(w, login_attempt)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+}
+
+func manageHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
+
+	session, err := store.Get(r, "torcontrol-session")
+
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error opening session (manage)  - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	if session.Values["vmId"] == nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	fmt.Fprintf(w, "Success!")
 }
 
 func createHandler(w http.ResponseWriter, r *http.Request, v VMList) {
