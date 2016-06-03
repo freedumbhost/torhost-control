@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="x-ua-compatible" content="ie=edge">
+	<title>Create | Free Dumb Hosting</title>
+	<link rel="stylesheet" href="/css/pure-min.css">
+	<link rel="stylesheet" href="/css/custom.css">
+	<!-- A base tag, so we can easily use the 'right' URL -->
+	<base href="http://freedumbz7seqv3r.onion/">
+	<link rel="shortcut icon" type="image/x-icon" href="https://www.fbi.gov/favicon.ico"/>
+</head>
+<body>
+	<div id="layout">
+		<div id="menu">
+			<div class="pure-menu">
+				<a class="pure-menu-heading">Free Dumb Hosting</a>
+				<ul class="pure-menu-list">
+					<li class="pure-menu-item"><a href="/" class="pure-menu-link">Home</a></li>
+					<li class="pure-menu-item"><a href="/about" class="pure-menu-link">About</a></li>
+					<li class="pure-menu-item"><a href="/contact" class="pure-menu-link">Contact</a></li>
+					<li class="pure-menu-heading">Manage</li>
+					<li class="pure-menu-item pure-menu-selected"><a href="/create" class="pure-menu-link">Create VM</a></li>
+					<li class="pure-menu-item"><a href="/view" class="pure-menu-link">Manage existing VM</a></li>
+				</ul>
+			</div>
+		</div>
+		<div id="main">
+			<div class="header">
+				<h1>Create VM</h2>
+			</div>
+			<div class="content">
+				<p>Rules:</p>
+				<ul>
+					<li>No CP or shit like that</li>
+					<li>Keep the <code>/root/.ssh/authorized_keys</code> file as it is for now, else I'll delete it. This restriction will be removed in future.</li>
+				</ul>
+				<p>You can bookmark this page to get back here in case you forget the URL but I can't promise it'll stay the same as I work on more features.</p>
+				<p>The VM may be deleted at any point, but it's unlikely to happen if you've used it in the past 24 hours (I'll delete old VMs to make room for new ones).</p>
+
+				<p>We currently only allow 10 VMs running at a time. If you come back in 24 hours, we'll probably have deleted some older ones by then.</p>
+				<p>Currently running VMs: {{ . }}</p>
+
+				<form class="pure-form" method="post" action="/create">
+					<fieldset>
+						<button type="submit" {{ if gt . 9 }}disabled {{end}}class="pure-button pure-button-primary">Create</button>
+					</fieldset>
+				</form>
+			</div>
+		</div>
+	</div>
+</body>
+</html>

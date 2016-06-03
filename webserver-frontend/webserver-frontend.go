@@ -91,24 +91,21 @@ func run() int {
 		fmt.Println("Could not read enc.key")
 		return 1
 	}
-
 	store = sessions.NewFilesystemStore("", authKey, encKey)
 
 	// Create our datastructure
 	v := VMList{Vms: make(map[int]VMInformation)}
 
 	// Sync our list of VMs with the hypervisor
-	err = syncWithHypervisor(v)
+	err = syncWithHypervisor(&v)
 	if err != nil {
-		fmt.Printf("Error syncing with hypervisor: %v", err)
+		fmt.Printf("Error syncing with hypervisor: ", err)
 		return 1
 	}
 
-	// Set up our session store(s)
-
 	// TODO Template caching
 	// TODO A nicer 404 and 5XX page
-	// TODO use mux properly
+	// These functions repeat a lot, rewrite (globals ftw)
 
 	r := mux.NewRouter()
 
@@ -125,9 +122,15 @@ func run() int {
 		contactHandler(w, r, cm)
 	})
 
+	// GET for /create, displays a form
 	r.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
-		createHandler(w, r, v)
-	})
+		createGetHandler(w, r, v)
+	}).Methods("GET")
+
+	// POST for /create, does the work
+	r.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
+		createPostHandler(w, r, v)
+	}).Methods("POST")
 
 	r.HandleFunc("/view/{id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
 		viewHandler(w, r, v)
@@ -150,7 +153,7 @@ func run() int {
 	return 0
 }
 
-func syncWithHypervisor(v VMList) error {
+func syncWithHypervisor(v *VMList) error {
 	// Get the updated list from the hypervisor daemon
 	resp, err := http.Get("http://10.0.5.20/sync")
 	if err != nil {
@@ -176,6 +179,8 @@ func syncWithHypervisor(v VMList) error {
 	}
 
 	v.updateVMs(Vms)
+
+	fmt.Printf("[%v] Synced with hypervisor. Currently listing we have %v VMs.\r\n", time.Now(), len(v.Vms))
 	return nil
 }
 
@@ -277,8 +282,26 @@ func manageHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	fmt.Fprintf(w, "Success!")
 }
 
-func createHandler(w http.ResponseWriter, r *http.Request, v VMList) {
-	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
+func createGetHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+	fmt.Println(fmt.Sprintf("[%v] %v (GET)", time.Now(), r.URL.Path))
+
+	// Render the template
+	t, err := template.ParseFiles("templates/create.html")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+	err = t.Execute(w, len(v.Vms))
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+}
+
+func createPostHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+	fmt.Println(fmt.Sprintf("[%v] %v (POST)", time.Now(), r.URL.Path))
 
 	// Check we don't have too many VMs running
 	if len(v.Vms) >= 10 {
