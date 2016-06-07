@@ -34,9 +34,11 @@
 					<p>Password incorrect.</p>
 				{{ end }}
 				<p>Please log in using this form. It's a test for now, but in future, you'll use your random token for this.</p>
-				<form class="pure-form pure-form-stacked" method="post" action="/login">
+				<form class="pure-form" method="post" action="/login">
 					<fieldset>
-						<input name="password" type="password">
+						<legend>Login to manage your VM</legend>
+						<input type="number" name="vmid" placeholder="VM ID">
+						<input name="password" type="password" placeholder="Password">
 						<button type="submit" class="pure-button pure-button-primary">Login</button>
 					</fieldset>
 				</form>

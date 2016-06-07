@@ -1,13 +1,16 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/garyburd/redigo/redis"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 	"html/template"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -80,6 +83,14 @@ func main() {
 }
 
 func run() int {
+	// Connect to redis
+	redisCon, err := redis.Dial("tcp", "10.0.5.20:6379")
+	if err != nil {
+		fmt.Printf("Could not connect to redis database: %v", err)
+		return 1
+	}
+	defer redisCon.Close()
+
 	// Set up our session configuration
 	authKey, err := ioutil.ReadFile("config/auth.key")
 	if err != nil {
@@ -129,7 +140,7 @@ func run() int {
 
 	// POST for /create, does the work
 	r.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
-		createPostHandler(w, r, v)
+		createPostHandler(w, r, v, redisCon)
 	}).Methods("POST")
 
 	r.HandleFunc("/view/{id:[0-9]+}", func(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +148,7 @@ func run() int {
 	})
 
 	r.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-		loginHandler(w, r, v)
+		loginHandler(w, r, v, redisCon)
 	})
 
 	r.HandleFunc("/manage", func(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +216,7 @@ func registerStaticFiles(r *mux.Router) {
 	}
 }
 
-func loginHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+func loginHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon redis.Conn) {
 	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 
 	session, err := store.Get(r, "torcontrol-session")
@@ -229,11 +240,34 @@ func loginHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	}
 
 	login_attempt := false
+	empty := false
 
 	if val, ok := r.Form["password"]; ok {
-		// TODO: Proper login system
-		if val[0] == "secret" {
-			session.Values["vmId"] = 1
+		if val[0] == "" {
+			empty = true
+		}
+	} else {
+		empty = true
+	}
+
+	if val, ok := r.Form["vmid"]; ok {
+		if val[0] == "" {
+			empty = true
+		}
+	} else {
+		empty = true
+	}
+
+	if !empty {
+		rply, err := redis.String(redisCon.Do("GET", fmt.Sprintf("vm:%v:password", r.Form["vmid"][0])))
+		if err != nil {
+			fmt.Println(fmt.Sprintf("[%v] Error from redis (login) - %v", time.Now(), err))
+			http.Error(w, "Error", http.StatusInternalServerError)
+			return
+		}
+		// TODO: Hashing (though not a major issue since they're randomly generated)
+		if r.Form["password"][0] == rply {
+			session.Values["vmId"] = r.Form["vmid"][0]
 			err := session.Save(r, w)
 			if err != nil {
 				fmt.Println(fmt.Sprintf("[%v] Could not save session - %v", time.Now(), err))
@@ -285,6 +319,21 @@ func manageHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 func createGetHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	fmt.Println(fmt.Sprintf("[%v] %v (GET)", time.Now(), r.URL.Path))
 
+	// Start a session so we have a randomly generated password to give them
+	session, err := store.Get(r, "torcontrol-session")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error opening session (create-get)  - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	session.Values["randomString"], err = randomString(20, nil)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error generating random token (create-get)  - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
 	// Render the template
 	t, err := template.ParseFiles("templates/create.html")
 	if err != nil {
@@ -292,7 +341,23 @@ func createGetHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 		http.Error(w, "Error", http.StatusInternalServerError)
 		return
 	}
-	err = t.Execute(w, len(v.Vms))
+
+	// Save the session
+	err = session.Save(r, w)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could not save session (create-get) - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	templateData := struct {
+		NumberOfVMs  int
+		RandomString string
+	}{
+		len(v.Vms),
+		session.Values["randomString"].(string),
+	}
+	err = t.Execute(w, templateData)
 	if err != nil {
 		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
 		http.Error(w, "Error", http.StatusInternalServerError)
@@ -300,8 +365,24 @@ func createGetHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	}
 }
 
-func createPostHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+func createPostHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon redis.Conn) {
 	fmt.Println(fmt.Sprintf("[%v] %v (POST)", time.Now(), r.URL.Path))
+
+	// Validate we have a session and key
+	session, err := store.Get(r, "torcontrol-session")
+
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error opening session (create-post)  - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	if (session.Values["randomString"] == nil) || (len(session.Values["randomString"].(string)) != 20) {
+		// Did not have a valid session, lets just give an error page, they can go back and try again
+		fmt.Println(fmt.Sprintf("[%v] Error validating session (create-post) - session value: %v", time.Now(), session.Values["randomString"]))
+		http.Error(w, "Error - session invalid", http.StatusInternalServerError)
+		return
+	}
 
 	// Check we don't have too many VMs running
 	if len(v.Vms) >= 10 {
@@ -352,11 +433,31 @@ func createPostHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 		return
 	}
 
+	// Add the key to redis
+	rply, err := redisCon.Do("SET", fmt.Sprintf("vm:%v:password", vmId), session.Values["randomString"].(string))
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error from redis (create) - %v", time.Now(), err))
+		http.Redirect(w, r, fmt.Sprintf("/view/%v?error=session", vmId), http.StatusFound)
+		return
+	}
+
+	if rply != "OK" {
+		fmt.Println(fmt.Sprintf("[%v] Unexpected response from redis (create) - %v", time.Now(), rply))
+		http.Redirect(w, r, fmt.Sprintf("/view/%v?error=session", vmId), http.StatusFound)
+		return
+	}
+
+	// Assume the key is added, yay!
+	// TODO: Do we need to check the response _ above?
+
 	http.Redirect(w, r, fmt.Sprintf("/view/%v", vmId), http.StatusFound)
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
+
+	// TODO: Deal with the case where ?error=true, meaning there was a redis error
+
 	vmIdString := r.URL.Path[len("/view/"):]
 
 	// Validate the vmId
@@ -503,4 +604,25 @@ func indexHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 		http.Error(w, "Error", http.StatusInternalServerError)
 		return
 	}
+}
+
+/**
+ * Generate a random string of a given length with a given alphabet
+ * If letters parameter is empty, use a default alphabet of ascii runes
+ */
+func randomString(length int, letters []rune) (string, error) {
+	if letters == nil {
+		letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
+	}
+
+	b := make([]rune, length)
+	for i := range b {
+		rint, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		// bail out if error
+		if err != nil {
+			return "", err
+		}
+		b[i] = letters[rint.Int64()]
+	}
+	return string(b), nil
 }
