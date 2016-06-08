@@ -99,6 +99,7 @@ func rewriteConfig() {
 	doRedis := true
 	redisCon, err := redis.Dial("tcp", "10.0.5.20:6379")
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "error connecting to redis: %v", err)
 		doRedis = false
 	}
 
@@ -111,7 +112,14 @@ func rewriteConfig() {
 			vminfo = VMInformation{Id: i, Status: "complete"}
 			// Check with redis to see if we need to have an open port
 			if doRedis {
-				vminfo.OpenPorts, err = redis.StringMap(redisCon.Do("SMEMBERS", fmt.Sprintf("vm:%v:hostedports", i)))
+				vminfo.OpenPorts = make(map[string]string)
+				inter, err := redis.Strings(redisCon.Do("SMEMBERS", fmt.Sprintf("vm:%v:hostedports", i)))
+				for _, f := range inter {
+					vminfo.OpenPorts[f] = f
+				}
+				if err != nil {
+					fmt.Fprintln(os.Stderr, "error talking to redis: %v", err)
+				}
 				// We can ignore an error since the map is still intialized
 				vms.Vms[i] = vminfo
 			}
@@ -128,7 +136,7 @@ func rewriteConfig() {
 	}
 
 	var iptables bytes.Buffer
-	err = t.Execute(&iptables, vms.Vms)
+	err = t.Execute(&iptables, vms)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error executing iptables template for new VM: %v", err)
 		return
