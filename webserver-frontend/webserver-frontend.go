@@ -313,7 +313,28 @@ func manageHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 		return
 	}
 
-	fmt.Fprintf(w, "Success!")
+	// Convert it to an ID for stuff
+	vmId, err := strconv.Atoi(session.Values["vmId"].(string))
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error casting vmid (manage)  - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Render the template
+	t, err := template.ParseFiles("templates/manage.html")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	err = t.Execute(w, v.Vms[vmId])
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
 }
 
 func createGetHandler(w http.ResponseWriter, r *http.Request, v VMList) {
@@ -334,18 +355,18 @@ func createGetHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 		return
 	}
 
-	// Render the template
-	t, err := template.ParseFiles("templates/create.html")
-	if err != nil {
-		fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
-		http.Error(w, "Error", http.StatusInternalServerError)
-		return
-	}
-
 	// Save the session
 	err = session.Save(r, w)
 	if err != nil {
 		fmt.Println(fmt.Sprintf("[%v] Could not save session (create-get) - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Render the template
+	t, err := template.ParseFiles("templates/create.html")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Could parse template - %v", time.Now(), err))
 		http.Error(w, "Error", http.StatusInternalServerError)
 		return
 	}
