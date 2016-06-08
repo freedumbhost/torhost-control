@@ -152,7 +152,7 @@ func run() int {
 	})
 
 	r.HandleFunc("/manage", func(w http.ResponseWriter, r *http.Request) {
-		manageHandler(w, r, v)
+		manageHandler(w, r, v, redisCon)
 	})
 
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -297,7 +297,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon red
 
 }
 
-func manageHandler(w http.ResponseWriter, r *http.Request, v VMList) {
+func manageHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon redis.Conn) {
+	// We only have a single handler for POST and GET, because we display the same form either way
 	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 
 	session, err := store.Get(r, "torcontrol-session")
@@ -319,6 +320,29 @@ func manageHandler(w http.ResponseWriter, r *http.Request, v VMList) {
 		fmt.Println(fmt.Sprintf("[%v] Error casting vmid (manage)  - %v", time.Now(), err))
 		http.Error(w, "Error", http.StatusInternalServerError)
 		return
+	}
+
+	// Do the post action if we need to
+	// Currently, only POST is the stuff to activate the port 80 stuff
+	// Check if we need to process the login
+	err = r.ParseForm()
+	if err == nil {
+		// If we're here, a POST was done -- no need to validate, a POST means do the port opening
+		// Add a key to the DB to indicate they have it opened
+		_, err := redisCon.Do("SADD", fmt.Sprintf("vm:%v:hostedports", vmId), "80")
+		if err != nil {
+			fmt.Println(fmt.Sprintf("[%v] Error from redis (manage) - %v", time.Now(), err))
+			http.Error(w, "Error", http.StatusInternalServerError)
+			return
+		}
+
+		// Use pubsub to indicate the tor daemon should open the port
+		_, err = redisCon.Do("PUBLISH", "openport", fmt.Sprintf("%v:%v", vmId, 80))
+		if err != nil {
+			fmt.Println(fmt.Sprintf("[%v] Error from redis (manage) - %v", time.Now(), err))
+			http.Error(w, "Error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Render the template

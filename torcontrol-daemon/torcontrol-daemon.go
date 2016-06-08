@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/garyburd/redigo/redis"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,23 +16,41 @@ import (
 	"time"
 )
 
-type VMInformation struct {
+// A struct to hold the list of VMs
+type VMList struct {
 	mux sync.Mutex
-	// This map is id => state (should be an enum I guess)
-	Vms map[int]string
+	Vms map[int]VMInformation
 }
 
-type SingleVMInformation struct {
-	Id int
+type VMInformation struct {
+	Status    string
+	Id        int
+	OpenPorts map[string]string
 }
+
+var configLock sync.Mutex
 
 func main() {
 	os.Exit(run())
 }
 
 func run() int {
-	// Create our datastructure
+	// Create our datastructures
 	v := sync.Mutex{}
+	configLock = sync.Mutex{}
+
+	// Connect here rather than in the handler so that we can ensure we can connect and exit if need be
+	{
+		// Scope our variable to ensure no one accidently uses the connection
+		redisCon, err := redis.Dial("tcp", "10.0.5.20:6379")
+		if err != nil {
+			fmt.Printf("Could not connect to redis database: %v", err)
+			return 1
+		}
+		go redisPubSubHandle(redisCon)
+		defer redisCon.Close()
+
+	}
 
 	http.HandleFunc("/create/", func(w http.ResponseWriter, r *http.Request) {
 		createHandler(w, r, v)
@@ -46,6 +65,121 @@ func run() int {
 	http.ListenAndServe("10.0.0.5:80", nil)
 
 	return 0
+}
+
+func redisPubSubHandle(redisCon redis.Conn) {
+	psc := redis.PubSubConn{Conn: redisCon}
+	psc.Subscribe("openport")
+
+	for {
+		switch psc.Receive().(type) {
+		case redis.Message:
+			fmt.Println(fmt.Sprintf("[%v] Got a PUBSUB message", time.Now()))
+			// Lets tell Tor to regenerate its configuration (which happens without the state of the previous message)
+			// TODO: We should just add the port to the config, not regenerate it from scratch, probably
+			go rewriteConfig()
+		}
+	}
+}
+
+func rewriteConfig() {
+	configLock.Lock()
+	defer configLock.Unlock()
+
+	// To generate the new torrc we need the list of every VM, which we can get by looking in /etc/network/interfaces.d
+	vmsfiles, err := filepath.Glob("/etc/network/interfaces.d/vlan*")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error globbing for VMs: %v", err)
+		return
+	}
+
+	vms := VMList{Vms: make(map[int]VMInformation)}
+
+	// A variable for whether we should bother talking to redis
+	doRedis := true
+	redisCon, err := redis.Dial("tcp", "10.0.5.20:6379")
+	if err != nil {
+		doRedis = false
+	}
+
+	for _, f := range vmsfiles {
+		fid := strings.Split(f, "vlan")
+		i, err := strconv.Atoi(fid[1])
+		if err == nil {
+			// We have a valid ID we should build a VMInformation for
+			var vminfo VMInformation
+			vminfo = VMInformation{Id: i, Status: "complete"}
+			// Check with redis to see if we need to have an open port
+			if doRedis {
+				vminfo.OpenPorts, err = redis.StringMap(redisCon.Do("SMEMBERS", fmt.Sprintf("vm:%v:hostedports", i)))
+				// We can ignore an error since the map is still intialized
+				vms.Vms[i] = vminfo
+			}
+			// Add it to our VMList
+		} // else it probably was something we can ignore
+	}
+
+	// Configure ip tables
+	// TODO rewrite so this doesn't require a reload
+	t, err := template.ParseFiles("assets/iptables")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating iptables template for new VM: %v", err)
+		return
+	}
+
+	var iptables bytes.Buffer
+	err = t.Execute(&iptables, vms.Vms)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error executing iptables template for new VM: %v", err)
+		return
+	}
+
+	// Write new iptables file
+	err = ioutil.WriteFile("/etc/iptables", iptables.Bytes(), 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error writing iptables template for new VM: %v", err)
+		return
+	}
+
+	// Reload iptables
+	err = exec.Command("iptables-restore", "/etc/iptables").Run()
+	if err != nil {
+		// TODO More graceful handling of this. If iptables is down, HOLY SHIT FIRE, like shutdown -h now
+		fmt.Fprintln(os.Stderr, "error executing iptables restore for new VM: %v", err)
+		return
+	}
+
+	// Generate new torrc
+	t, err = template.ParseFiles("assets/torrc")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating torrc template for new VM: %v", err)
+		return
+	}
+
+	var torrc bytes.Buffer
+	err = t.Execute(&torrc, vms)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error executing torrc template for new VM: %v", err)
+		return
+	}
+
+	// Write new torrc
+	err = ioutil.WriteFile("/etc/tor/torrc", torrc.Bytes(), 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error writing torrc template for new VM: %v", err)
+		return
+	}
+
+	// Send SIGHUP to Tor
+	// From docs: The signal instructs Tor to reload its configuration (including closing and reopening logs), and kill and restart its helper processes if applicable.
+	// TODO Look into using control port to make changes without a reload required
+	err = exec.Command("pkill", "-SIGHUP", "tor$").Run()
+	if err != nil {
+		// TODO More graceful handling of this. If tor is down, HOLY SHIT FIRE
+		fmt.Fprintln(os.Stderr, "error executing tor restart for new VM: %v", err)
+		return
+	}
+
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request, v sync.Mutex) {
@@ -109,7 +243,7 @@ func create(vmId int, v sync.Mutex) {
 		return
 	}
 	var net bytes.Buffer
-	err = t.Execute(&net, SingleVMInformation{Id: vmId})
+	err = t.Execute(&net, VMInformation{Id: vmId})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error executing template for new VM: %v", err)
 		return
@@ -138,82 +272,6 @@ func create(vmId int, v sync.Mutex) {
 		return
 	}
 
-	// To generate the new torrc we nee the list of every VM, which we can get by looking in /etc/network/interfaces.d
-	vmsfiles, err := filepath.Glob("/etc/network/interfaces.d/vlan*")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error globbing for VMs: %v", err)
-		return
-	}
-
-	vms := VMInformation{Vms: make(map[int]string)}
-
-	for _, f := range vmsfiles {
-		fid := strings.Split(f, "vlan")
-		i, err := strconv.Atoi(fid[1])
-		if err == nil {
-			vms.Vms[i] = "complete"
-		} // else it probably was something we can ignore
-	}
-
-	// Configure ip tables
-	// TODO rewrite so this doesn't require a reload
-	t, err = template.ParseFiles("assets/iptables")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error creating iptables template for new VM: %v", err)
-		return
-	}
-
-	var iptables bytes.Buffer
-	err = t.Execute(&iptables, vms)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error executing iptables template for new VM: %v", err)
-		return
-	}
-
-	// Write new iptables file
-	err = ioutil.WriteFile("/etc/iptables", iptables.Bytes(), 0644)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error writing iptables template for new VM: %v", err)
-		return
-	}
-
-	// Reload iptables
-	err = exec.Command("iptables-restore", "/etc/iptables").Run()
-	if err != nil {
-		// TODO More graceful handling of this. If iptables is down, HOLY SHIT FIRE, like shutdown -h now
-		fmt.Fprintln(os.Stderr, "error executing iptables restore for new VM: %v", err)
-		return
-	}
-
-	// Generate new torrc
-	t, err = template.ParseFiles("assets/torrc")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error creating torrc template for new VM: %v", err)
-		return
-	}
-
-	var torrc bytes.Buffer
-	err = t.Execute(&torrc, vms)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error executing torrc template for new VM: %v", err)
-		return
-	}
-
-	// Write new torrc
-	err = ioutil.WriteFile("/etc/tor/torrc", torrc.Bytes(), 0644)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error writing torrc template for new VM: %v", err)
-		return
-	}
-
-	// Send SIGHUP to Tor
-	// From docs: The signal instructs Tor to reload its configuration (including closing and reopening logs), and kill and restart its helper processes if applicable.
-	// TODO Look into using control port to make changes without a reload required
-	err = exec.Command("pkill", "-SIGHUP", "tor$").Run()
-	if err != nil {
-		// TODO More graceful handling of this. If tor is down, HOLY SHIT FIRE
-		fmt.Fprintln(os.Stderr, "error executing tor restart for new VM: %v", err)
-		return
-	}
-
+	// Now we just create it
+	rewriteConfig()
 }

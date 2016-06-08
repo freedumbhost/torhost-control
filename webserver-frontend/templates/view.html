@@ -21,7 +21,7 @@
 					<li class="pure-menu-item"><a href="/contact" class="pure-menu-link">Contact</a></li>
 					<li class="pure-menu-heading">Manage</li>
 					<li class="pure-menu-item"><a href="/create" class="pure-menu-link">Create VM</a></li>
-					<li class="pure-menu-item pure-menu-selected"><a href="/view" class="pure-menu-link">Manage existing VM</a></li>
+					<li class="pure-menu-item pure-menu-selected"><a href="/manage" class="pure-menu-link">Manage existing VM</a></li>
 				</ul>
 			</div>
 		</div>
@@ -29,7 +29,7 @@
 			<div class="header">
 				{{ if eq .Status "complete" }}
 				<h1>Here is your new VM!</h2>
-				<h2>{{ .URL }} - {{ .Status }}</h2>
+				<h2>{{ .URL }}  - {{ .Status }}</h2>
 				{{ else }}
 				<h1>Your VM is being created...</h1>
 				<h2>Status: {{ .Status }}</h2>
@@ -43,6 +43,7 @@
 				<p>If the status is <code>broken</code>, our provisioning process failed. Try again, or wait for us to fix it. If the status is <code>invalid</code> perhaps you mangled the URL on purpose, or we have a bigger bug.</p>
 				<p>Otherwise, just refresh and get your new VM.</p>
 				{{ end }}
+				<p>To manage your VM, use the password on the previous screen to log into the Manage section. From there, you can enable hosting a website on port 80, for example. Your VM ID is the one in the URL.</p>
 				<p>Rules:</p>
 				<ul>
 					<li>No CP or shit like that</li>
