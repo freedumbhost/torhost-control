@@ -220,9 +220,9 @@ TransPort 10.0.{{ $key }}.5:9040
 DNSPort 10.0.{{ $key }}.5:9053
 HiddenServiceDir /var/lib/tor/guest-{{ $key }}/
 HiddenServicePort 22 10.0.{{ $key }}.25:22
-
 {{ range $port, $port2 := $value.OpenPorts }}
 ## Additional open port
-HiddenServicePort {{ $port }} 10.0.{{ $key }}.5:{{ $port }}
+HiddenServicePort {{ $port }} 10.0.{{ $key }}.25:{{ $port }}
 {{ end}}
+
 {{ end }}
