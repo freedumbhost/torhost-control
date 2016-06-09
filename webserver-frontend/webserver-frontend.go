@@ -325,24 +325,40 @@ func manageHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon re
 	// Do the post action if we need to
 	// Currently, only POST is the stuff to activate the port 80 stuff
 	// Check if we need to process the login
-	err = r.ParseForm()
-	if err == nil {
-		// If we're here, a POST was done -- no need to validate, a POST means do the port opening
-		// Add a key to the DB to indicate they have it opened
-		_, err := redisCon.Do("SADD", fmt.Sprintf("vm:%v:hostedports", vmId), "80")
-		if err != nil {
-			fmt.Println(fmt.Sprintf("[%v] Error from redis (manage) - %v", time.Now(), err))
-			http.Error(w, "Error", http.StatusInternalServerError)
-			return
-		}
+	if r.Method == "POST" {
+		err = r.ParseForm()
+		if err == nil {
+			var command string
 
-		// Use pubsub to indicate the tor daemon should open the port
-		_, err = redisCon.Do("PUBLISH", "openport", fmt.Sprintf("%v:%v", vmId, 80))
-		if err != nil {
-			fmt.Println(fmt.Sprintf("[%v] Error from redis (manage) - %v", time.Now(), err))
-			http.Error(w, "Error", http.StatusInternalServerError)
-			return
+			if _, ok := r.Form["port80"]; ok {
+				command = "SADD"
+			} else {
+				command = "SREM"
+			}
+			// Either remove or add the port in the database
+			_, err := redisCon.Do(command, fmt.Sprintf("vm:%v:hostedports", vmId), "80")
+			if err != nil {
+				fmt.Println(fmt.Sprintf("[%v] Error from redis (manage) - %v", time.Now(), err))
+				http.Error(w, "Error", http.StatusInternalServerError)
+				return
+			}
+
+			// If we get here, we should trigger a PUBSUB to activate the change in state, in either direction
+			_, err = redisCon.Do("PUBLISH", "openport", fmt.Sprintf("%v:%v", vmId, 80))
+			if err != nil {
+				fmt.Println(fmt.Sprintf("[%v] Error from redis (manage) - %v", time.Now(), err))
+				http.Error(w, "Error", http.StatusInternalServerError)
+				return
+			}
 		}
+	}
+
+	// Retrive the key from the database for whether port 80 is open
+	port80, err := redis.Bool(redisCon.Do("SISMEMBER", fmt.Sprintf("vm:%v:hostedports", vmId), "80"))
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error from redis (manage) - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
 	}
 
 	// Render the template
@@ -353,7 +369,15 @@ func manageHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon re
 		return
 	}
 
-	err = t.Execute(w, v.Vms[vmId])
+	templateData := struct {
+		VMInfo     VMInformation
+		Port80Open bool
+	}{
+		v.Vms[vmId],
+		port80,
+	}
+	err = t.Execute(w, templateData)
+
 	if err != nil {
 		fmt.Println(fmt.Sprintf("[%v] Could execute template - %v", time.Now(), err))
 		http.Error(w, "Error", http.StatusInternalServerError)

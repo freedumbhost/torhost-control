@@ -31,14 +31,16 @@
 			</div>
 			<div class="content">
 				<p>The management section is still sparse, but will gain features over time.</p>
-				<p>Your VM ID: {{ .Id }}.</p>
-				<p>Onion URL: {{ .URL }}.</p>
-				<p>Status: {{ .Status }}.</p>
+				<p>Your VM ID: {{ .VMInfo.Id }}.</p>
+				<p>Onion URL: {{ .VMInfo.URL }}.</p>
+				<p>Status: {{ .VMInfo.Status }}.</p>
 
 				<form class="pure-form" method="post" action="/manage">
 					<fieldset>
-						<legend>Open port 80 on your hidden service URL</legend>
-						<button type="submit" class="pure-button pure-button-primary">Open</button>
+						<label for="port80" class="pure-checkbox">
+							<input name="port80" type="checkbox"{{ if .Port80Open }} checked="checked"{{ end }}> Open Port 80?
+						</label>
+						<button type="submit" class="pure-button pure-button-primary">Save</button>
 					</fieldset>
 				</form>
 			</div>
