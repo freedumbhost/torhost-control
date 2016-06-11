@@ -42,9 +42,10 @@
 				<p>Currently running VMs: {{ .NumberOfVMs }}</p>
 
 				<hr>
-				<p>When you generate a new VM, it is done with a randomly generate password that you can then use to log in to a management portal at a later date. Your code is:
+				<p>When you generate a new VM, you also are given a password used to log into the management console. Your password is:
 				<pre>{{ .RandomString }}</pre></p>
-				<p>Please write it down, it will not be shown again, and it is unlikely there will be a forgotten password feature any time soon.</p>
+				<p>Please write it down, it will not be shown again, and it is unlikely there will be a forgotten password feature any time soon.<br>
+				You also require an ID to log in, which is the nubmer in the URL once your VM is generated. Together, these will let you log in to manage your new VM.</p>
 
 				<form class="pure-form" method="post" action="/create">
 					<fieldset>
