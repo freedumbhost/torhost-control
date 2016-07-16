@@ -70,15 +70,53 @@ func run() int {
 func redisPubSubHandle(redisCon redis.Conn) {
 	psc := redis.PubSubConn{Conn: redisCon}
 	psc.Subscribe("openport")
+	psc.Subscribe("deletevm")
 
 	for {
-		switch psc.Receive().(type) {
+		// TODO Can we use an if/continue instead of a switch?
+		switch v := psc.Receive().(type) {
 		case redis.Message:
-			fmt.Println(fmt.Sprintf("[%v] Got a PUBSUB message", time.Now()))
-			// Lets tell Tor to regenerate its configuration (which happens without the state of the previous message)
-			// TODO: We should just add the port to the config, not regenerate it from scratch, probably
-			go rewriteConfig()
+			switch v.Channel {
+			case "openport":
+				// Lets tell Tor to regenerate its configuration (which happens without the state of the previous message)
+				// TODO: We should just add the port to the config, not regenerate it from scratch, probably
+				go rewriteConfig()
+			case "deletevm":
+				// Parse out the ID and if required, do the deed
+				vmId, err := strconv.Atoi(string(v.Data))
+				// Check whether the ID is valid
+				if err != nil {
+					continue
+				}
+				if vmId < 50 || vmId > 255 {
+					return
+				}
+
+				go deleteVm(vmId)
+			}
 		}
+		fmt.Println(fmt.Sprintf("[%v] Got a PUBSUB message", time.Now()))
+	}
+}
+
+func deleteVm(vmId int) {
+	if vmId < 50 || vmId > 255 {
+		return
+	}
+
+	// delete the networking file
+	err := os.Remove(fmt.Sprintf("/etc/network/interfaces.d/vlan%v", vmId))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "could not delete networking interface (vmId: %v): %v", vmId, err)
+	}
+
+	// regenerate configuration
+	rewriteConfig()
+
+	// now clean up the extra files in /var/lib/tor
+	err := os.Remove(fmt.Sprintf("/var/lib/tor/guest-%v", vmId))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "could not delete tor datadir (vmId: %v): %v", vmId, err)
 	}
 }
 

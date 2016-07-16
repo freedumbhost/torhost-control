@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/garyburd/redigo/redis"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -48,6 +49,20 @@ func (v *VMList) addVM(vmId int, status string, url string) error {
 	v.Vms[vmId] = vm
 
 	return nil // no errors
+}
+
+func (v *VMList) removeVM(vmId int) error {
+	v.mux.Lock()
+	defer v.mux.Unlock()
+
+	// If the VM doesn't already exist in the map, return an error
+	if _, ok := v.Vms[vmId]; !ok {
+		return errors.New("Invalid vmId specified")
+	}
+
+	delete(v.Vms, vmId)
+
+	return nil
 }
 
 func (v *VMList) updateVM(vmId int, status string, url string) error {
@@ -142,6 +157,19 @@ func run() int {
 	v := VMList{Vms: make(map[int]VMInformation)}
 	v.sync()
 
+	// Connect here rather than in the handler so that we can ensure we can connect and exit if need be
+	{
+		// Scope our variable to ensure no one accidently uses the connection
+		redisCon, err := redis.Dial("tcp", "10.0.5.20:6379")
+		if err != nil {
+			fmt.Printf("Could not connect to redis database: %v", err)
+			return 1
+		}
+		go redisPubSubHandle(redisCon, v)
+		defer redisCon.Close()
+
+	}
+
 	// Get the current numbers and data about VMs
 	http.HandleFunc("/sync", func(w http.ResponseWriter, r *http.Request) {
 		syncHandler(w, r, v)
@@ -161,6 +189,86 @@ func run() int {
 	http.ListenAndServe("10.0.5.20:80", nil)
 
 	return 0
+}
+
+func redisPubSubHandle(redisCon redis.Conn, vmlist VMList) {
+	psc := redis.PubSubConn{Conn: redisCon}
+	psc.Subscribe("deletevm")
+
+	for {
+		// TODO Can we use an if/continue instead of a switch?
+		switch v := psc.Receive().(type) {
+		case redis.Message:
+			switch v.Channel {
+			case "deletevm":
+				// Parse out the ID and if required, do the deed
+				vmId, err := strconv.Atoi(string(v.Data))
+				// Check whether the ID is valid
+				if err != nil {
+					continue
+				}
+				if vmId < 50 || vmId > 255 {
+					return
+				}
+
+				go deleteVm(vmId, vmlist)
+			}
+		}
+		fmt.Println(fmt.Sprintf("[%v] Got a PUBSUB message", time.Now()))
+	}
+}
+
+func deleteVm(vmId int, v VMList) {
+	// Change state
+	v.updateVM(vmId, "deleting", v.Vms[vmId].URL)
+
+	// Remove the screen session
+	cmd := exec.Command("screen", "-X", "-S", fmt.Sprintf("vm%v", vmId), "quit")
+	out, err := cmd.Output()
+	outStr := string(out)
+	if err != nil {
+		v.updateVM(vmId, "broken", "")
+		fmt.Fprintln(os.Stderr, "error starting screen session for new VM: %v \r\nadditional: %v", err, outStr)
+		return
+	}
+
+	// deactivate the bridge
+	err = exec.Command(fmt.Sprintf("/etc/init.d/net.br%v", vmId), "stop").Run()
+	if err != nil {
+		v.updateVM(vmId, "broken", "")
+		fmt.Fprintln(os.Stderr, "error executing bridge restart for new VM: %v", err)
+		return
+	}
+
+	// Bring down the vlan
+	out, err = exec.Command("ip", "link", "del", fmt.Sprintf("enp4s0.%v", vmId)).Output()
+	if err != nil {
+		v.updateVM(vmId, "broken", "")
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("error adding new vlan: %v %s", err, out))
+		return
+	}
+
+	// Remove the bridge symlink
+	err = os.Remove(fmt.Sprintf("/etc/init.d/net.br%v", vmId))
+	if err != nil {
+		v.updateVM(vmId, "broken", "")
+		fmt.Fprintf(os.Stderr, "error creating bridge symilnk for new VM: %v", err)
+		return
+	}
+
+	// Remove the disk image
+	err = os.RemoveAll(fmt.Sprintf("/root/vm-images/vm%v/", vmId))
+	if err != nil {
+		v.updateVM(vmId, "broken", "")
+		fmt.Fprintf(os.Stderr, "error removing disk image VM: %v", err)
+		return
+	}
+
+	// Complete deletion by removing it from the list of VMs
+	v.removeVM(vmId)
+
+	// We really should regenerate our net file here, but if we don't, it's not the end of the world (sucks to be the person to clean up after the reboot HA
+	// TODO ^ I'm going to regret this later, fix it
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request, v VMList) {
