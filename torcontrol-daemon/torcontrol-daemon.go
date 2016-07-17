@@ -114,7 +114,7 @@ func deleteVm(vmId int) {
 	rewriteConfig()
 
 	// now clean up the extra files in /var/lib/tor
-	err := os.Remove(fmt.Sprintf("/var/lib/tor/guest-%v", vmId))
+	err = os.Remove(fmt.Sprintf("/var/lib/tor/guest-%v", vmId))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "could not delete tor datadir (vmId: %v): %v", vmId, err)
 	}
