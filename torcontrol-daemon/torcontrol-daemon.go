@@ -118,6 +118,12 @@ func deleteVm(vmId int) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "could not delete tor datadir (vmId: %v): %v", vmId, err)
 	}
+
+	// Finally, remove the extra network device
+	err = exec.Command("ip", "link", "del", fmt.Sprintf("eth0.%v", vmId)).Run()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error remove old eth0.x device", err)
+	}
 }
 
 func rewriteConfig() {
