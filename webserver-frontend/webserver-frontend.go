@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"github.com/garyburd/redigo/redis"
 	"github.com/gorilla/mux"
-	"github.com/gorilla/sessions"
+	"gopkg.in/boj/redistore.v1"
 	"html/template"
 	"io/ioutil"
 	"math/big"
@@ -20,7 +20,7 @@ import (
 )
 
 // Our global session store
-var store *sessions.FilesystemStore
+var store *redistore.RediStore
 
 // A struct to hold the list of VMs
 type VMList struct {
@@ -78,6 +78,15 @@ func (v *VMList) updateVMs(newVMList map[int]VMInformation) error {
 	return nil
 }
 
+func (v *VMList) removeVM(vmId int) error {
+	v.mux.Lock()
+	defer v.mux.Unlock()
+
+	delete(v.Vms, vmId)
+
+	return nil
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -102,7 +111,12 @@ func run() int {
 		fmt.Println("Could not read enc.key")
 		return 1
 	}
-	store = sessions.NewFilesystemStore("", authKey, encKey)
+	store, err = redistore.NewRediStore(10, "tcp", "10.0.5.20:6379", "", authKey, encKey)
+	if err != nil {
+		fmt.Println("Could not start redis session store")
+		return 1
+	}
+	//store = sessions.NewFilesystemStore("", authKey, encKey) // Filesystem store
 
 	// Create our datastructure
 	v := VMList{Vms: make(map[int]VMInformation)}
@@ -112,6 +126,18 @@ func run() int {
 	if err != nil {
 		fmt.Printf("Error syncing with hypervisor: ", err)
 		return 1
+	}
+
+	// Connect to redis for PUBSUB duties
+	{
+		// Scope our variable to ensure no one accidently uses the connection
+		redisCon, err := redis.Dial("tcp", "10.0.5.20:6379")
+		if err != nil {
+			fmt.Printf("Could not connect to redis database: %v", err)
+			return 1
+		}
+		go redisPubSubHandle(redisCon, &v)
+		defer redisCon.Close()
 	}
 
 	// TODO Template caching
@@ -216,6 +242,60 @@ func registerStaticFiles(r *mux.Router) {
 	}
 }
 
+func redisPubSubHandle(redisCon redis.Conn, v *VMList) {
+	psc := redis.PubSubConn{Conn: redisCon}
+	psc.Subscribe("deletevm")
+
+	for {
+		// TODO Can we use an if/continue instead of a switch?
+		switch m := psc.Receive().(type) {
+		case redis.Message:
+			switch m.Channel {
+			case "deletevm":
+				// Parse out the ID and if required, do the deed
+				vmId, err := strconv.Atoi(string(m.Data))
+				// Check whether the ID is valid
+				if err != nil {
+					continue
+				}
+				if vmId < 50 || vmId > 255 {
+					return
+				}
+
+				go deleteVm(vmId, v)
+			}
+		}
+		fmt.Println(fmt.Sprintf("[%v] Got a PUBSUB message", time.Now()))
+	}
+}
+
+func deleteVm(vmId int, v *VMList) {
+	if vmId < 50 || vmId > 255 {
+		return
+	}
+
+	redisCon, err := redis.Dial("tcp", "10.0.5.20:6379")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error connecting to redis: %v", err)
+		return
+	}
+
+	// delete the hostedposts/password rows
+	redisCon.Do("DEL", fmt.Sprintf("vm:%v:password", vmId))
+	redisCon.Do("DEL", fmt.Sprintf("vm:%v:hostedports", vmId))
+
+	// Clear out the session entries
+	sessions, err := redis.Strings(redisCon.Do("KEYS", "session_*"))
+	for _, key := range sessions {
+		redisCon.Do("DEL", key)
+	}
+
+	// IT'S JUST A PRANK BRO
+
+	// remove it from our internal object so it can be reallocated
+	v.removeVM(vmId)
+}
+
 func loginHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon redis.Conn) {
 	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
 
@@ -296,6 +376,47 @@ func loginHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon red
 	}
 
 }
+
+/*
+func deleteHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon redis.Conn) {
+	fmt.Println(fmt.Sprintf("[%v] %v", time.Now(), r.URL.Path))
+
+	session, err := store.Get(r, "torcontrol-session")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error opening session (manage)  - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	if session.Values["vmId"] == nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	// Convert it to an ID for stuff
+	vmId, err := strconv.Atoi(session.Values["vmId"].(string))
+	if err != nil {
+		fmt.Println(fmt.Sprintf("[%v] Error casting vmid (manage)  - %v", time.Now(), err))
+		http.Error(w, "Error", http.StatusInternalServerError)
+		return
+	}
+
+	// If it's not a POST, just redirect back to the manage form
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/manage", http.StatusFound)
+		return
+	}
+
+	// Doesn't matter what the POST data is/was
+
+	// Perform the PUBSUB first
+
+	// Delete the password out of redis
+
+	// TODO: Destroy all sessions that have this VM ID so they don't persist
+
+}
+*/
 
 func manageHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon redis.Conn) {
 	// We only have a single handler for POST and GET, because we display the same form either way
