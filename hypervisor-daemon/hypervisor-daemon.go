@@ -241,7 +241,7 @@ func deleteVm(vmId int, v VMList) {
 	}
 
 	// Bring down the vlan
-	out, err = exec.Command("ip", "link", "del", fmt.Sprintf("enp4s0.%v", vmId)).Output()
+	out, err = exec.Command("ip", "link", "del", fmt.Sprintf("enp3s0.%v", vmId)).Output()
 	if err != nil {
 		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("error adding new vlan: %v %s", err, out))
@@ -388,7 +388,7 @@ func createVM(vmId int, v VMList) {
 	}
 
 	// Manually bring up the new vlan
-	out, err := exec.Command("ip", "link", "add", "link", "enp4s0", "name", fmt.Sprintf("enp4s0.%v", vmId), "type", "vlan", "id", fmt.Sprintf("%v", vmId)).Output()
+	out, err := exec.Command("ip", "link", "add", "link", "enp3s0", "name", fmt.Sprintf("enp3s0.%v", vmId), "type", "vlan", "id", fmt.Sprintf("%v", vmId)).Output()
 	if err != nil {
 		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("error adding new vlan: %v %s", err, out))
