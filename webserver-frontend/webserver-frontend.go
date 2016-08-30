@@ -585,7 +585,7 @@ func createPostHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCo
 	}
 
 	// Check we don't have too many VMs running
-	if len(v.Vms) >= 40 {
+	if len(v.Vms) >= 20 {
 		// Render the "too many" template
 		t, err := template.ParseFiles("templates/create-toomany.html")
 		if err != nil {
