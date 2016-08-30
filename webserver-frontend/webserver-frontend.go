@@ -339,10 +339,20 @@ func loginHandler(w http.ResponseWriter, r *http.Request, v VMList, redisCon red
 	}
 
 	if !empty {
-		rply, err := redis.String(redisCon.Do("GET", fmt.Sprintf("vm:%v:password", r.Form["vmid"][0])))
+		irply, err := redisCon.Do("GET", fmt.Sprintf("vm:%v:password", r.Form["vmid"][0]))
 		if err != nil {
 			fmt.Println(fmt.Sprintf("[%v] Error from redis (login) - %v", time.Now(), err))
-			http.Error(w, "Error", http.StatusInternalServerError)
+			http.Error(w, "Internal Error", http.StatusInternalServerError)
+			return
+		}
+		rply, err := redis.String(irply, nil)
+		if err != nil && err != redis.ErrNil {
+			fmt.Println(fmt.Sprintf("[%v] Error converting from redis to string (login) - %v", time.Now(), err))
+			http.Error(w, "Internal Error", http.StatusInternalServerError)
+			return
+		}
+		if err != nil {
+			http.Error(w, "No VM found with that ID", http.StatusNotFound)
 			return
 		}
 		// TODO: Hashing (though not a major issue since they're randomly generated)
