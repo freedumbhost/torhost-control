@@ -199,6 +199,7 @@ OutboundBindAddress 192.168.1.100
 ## Custom Configuration
 AutomapHostsOnResolve 1 
 VirtualAddrNetworkIPv4 10.192.0.0/10
+MaxClientCircuitsPending 128
 
 ## Manual configuration
 
