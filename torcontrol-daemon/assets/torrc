@@ -206,10 +206,6 @@ VirtualAddrNetworkIPv4 10.192.0.0/10
 HiddenServiceDir /var/lib/tor/freedumb/
 HiddenServicePort 80 10.0.5.25:80
 
-## TODO Replace this with automated when we can support more than just sshd hidden services
-HiddenServiceDir /var/lib/tor/guest-5/
-HiddenServicePort 80 10.0.5.25:80
-
 ## This is for the hypervisor, so unlikely to be replaced at any point
 TransPort 10.0.0.5:9040
 DNSPort 10.0.0.5:9053
