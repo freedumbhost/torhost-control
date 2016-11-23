@@ -21,7 +21,7 @@ Torhost Install
 8. Install golang. We require a newer version than is found in Debian Jessie: https://golang.org/doc/install (1.5 upwards should work).
 9. Configure tor:
   * We will replace our torrc with one from freedumbhost - https://raw.githubusercontent.com/freedumbhost/torhost-control/master/torcontrol-daemon/assets/torrc.
-  * Edit the torrc to remove all lines from `## Manual Configuration` onwards, as this is not required until our daemon is running properly.
+  * Edit the torrc to remove all lines from `## Automatically generated configuration` onwards, as this is not required until our daemon is running properly.
   * Verify tor is able to run with this new configuration: `/etc/init.d/tor restart && sleep 5 && ps aux | grep tor`.
   * Enable tor starting on boot: `update-rc.d tor defaults`.
 10. Configure our network interfaces:
@@ -34,10 +34,11 @@ iface eth0 inet static
 	gateway 0.0.0.0
 ``` 
 11. Plug in the network cable for eth0, to the hypervisor.
-12. Though this step may not be required, it is good practice to reboot the pi here to ensure a consistent and working network configuration..
+12. Though this step may not be required, it is good practice to reboot the pi here to ensure a consistent and working network configuration.
 13. If the hypervisor is running, confirm connectivity by running `ping 10.0.0.20`.
 14. Set up our management VLAN manually for first run:
   * Run `modprobe 8021q` (may require a hard reboot -- see https://www.raspberrypi.org/forums/viewtopic.php?f=66&t=31214 -- or perhaps an rpi-update TODO: investigate).
+  * Configure the 8021q module to load automatically with `echo '8021q' >> /etc/modules-load.d/modules.conf`.
   * Write the following to `/etc/network/interfaces.d/vlan5`:
 ```
 auto eth0.5
@@ -45,8 +46,8 @@ iface eth0.5 inet static
 	address 10.0.5.5
 	netmask 255.255.255.0
 ```
-  * Run `vconfig add eth0 5 && ifconfig eth0.5 up && ifconfig eth0.5 10.0.5.5 netmask 255.255.255.0`
-  * Run `ifconfig eth0.5 up`
+  * Run `vconfig add eth0 5 && ifconfig eth0.5 up && ifconfig eth0.5 10.0.5.5 netmask 255.255.255.0`.
+  * Confirm the VLAN interface exists with `ip addr`.
 **As pi**
 14. Clone the required sources: `git clone https://github.com/freedumbhost/torhost-control.git`.
 15. Run a screen for the tor daemon: `sudo screen -S torcontrol-daemon`.
