@@ -244,7 +244,7 @@ func deleteVm(vmId int, v VMList) {
 	out, err = exec.Command("ip", "link", "del", fmt.Sprintf("enp3s0.%v", vmId)).Output()
 	if err != nil {
 		v.updateVM(vmId, "broken", "")
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("error adding new vlan: %v %s", err, out))
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("error removing vlan: %v %s", err, out))
 		return
 	}
 
