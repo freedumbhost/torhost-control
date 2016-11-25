@@ -5,6 +5,7 @@ Torhost Install
 * The install is completed as two users: root and pi.
 
 **As root**
+
 1. Install the Raspbian Jessie image from https://www.raspberrypi.org/downloads/raspbian/ to an SD card.
 2. Boot into Raspbian as normal.
 3. Change the default password.
@@ -48,7 +49,9 @@ iface eth0.5 inet static
 ```
   * Run `vconfig add eth0 5 && ifconfig eth0.5 up && ifconfig eth0.5 10.0.5.5 netmask 255.255.255.0`.
   * Confirm the VLAN interface exists with `ip addr`.
+
 **As pi**
+
 14. Clone the required sources: `git clone https://github.com/freedumbhost/torhost-control.git`.
 15. Run a screen for the tor daemon: `sudo screen -S torcontrol-daemon`.
 16. Ensure your GOPATH is set, then get the required redis module: `go get github.com/garyburd/redigo/redis`.
