@@ -348,7 +348,7 @@ func createVM(vmId int, v VMList) {
 	}
 
 	// Create new disk image
-	err = exec.Command("qemu-img", "create", "-f", "qcow2", "-o", "backing_file=/root/vm-images/base-gentoo-vanilla-v2.img", fmt.Sprintf("/root/vm-images/vm%v/vm%v-gentoo-vanilla-v2.img", vmId, vmId)).Run()
+	err = exec.Command("qemu-img", "create", "-f", "qcow2", "-o", "backing_file=/root/vm-images/base-gentoo-vanilla-v3.img", fmt.Sprintf("/root/vm-images/vm%v/vm%v-gentoo-vanilla-v3.img", vmId, vmId)).Run()
 	if err != nil {
 		v.updateVM(vmId, "broken", "")
 		fmt.Fprintf(os.Stderr, "error creating disk image for new VM: %v", err)
@@ -404,7 +404,7 @@ func createVM(vmId int, v VMList) {
 	}
 
 	// Create a new screen/qemu instance
-	cmd := exec.Command("screen", "-d", "-m", "-S", fmt.Sprintf("vm%v", vmId), "qemu-system-x86_64", "-nographic", "-enable-kvm", "-cpu", "host", "-curses", "-m", "512M", "-drive", fmt.Sprintf("file=/root/vm-images/vm%v/vm%v-gentoo-vanilla-v2.img,if=virtio", vmId, vmId), "-netdev", fmt.Sprintf("tap,helper=/usr/libexec/qemu-bridge-helper --br=br%v,id=hn0", vmId), "-device", "virtio-net-pci,netdev=hn0,id=nic1", "-append", fmt.Sprintf("root=/dev/vda4 ro vmid=%v", vmId), "-kernel", "/root/vm-images/kernels/vmlinuz-4.1.7-hardened-r1")
+	cmd := exec.Command("screen", "-d", "-m", "-S", fmt.Sprintf("vm%v", vmId), "qemu-system-x86_64", "-nographic", "-enable-kvm", "-cpu", "host", "-curses", "-m", "512M", "-drive", fmt.Sprintf("file=/root/vm-images/vm%v/vm%v-gentoo-vanilla-v3.img,if=virtio", vmId, vmId), "-netdev", fmt.Sprintf("tap,helper=/usr/libexec/qemu-bridge-helper --br=br%v,id=hn0", vmId), "-device", "virtio-net-pci,netdev=hn0,id=nic1", "-append", fmt.Sprintf("root=/dev/vda4 ro vmid=%v", vmId), "-kernel", "/root/vm-images/kernels/vmlinuz-4.7.10-hardened")
 	// TODO: Find a way to check the error properly without using .Run() -- CHANGE TO .Start() else it won't work in futuer
 	out, err = cmd.Output()
 	outStr := string(out)
