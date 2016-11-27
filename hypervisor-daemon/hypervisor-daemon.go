@@ -248,6 +248,14 @@ func deleteVm(vmId int, v VMList) {
 		return
 	}
 
+	// Remove autostart of bridge
+	err = exec.Command("rc-update", "del", fmt.Sprintf("net.br%v", vmId)).Run()
+	if err != nil {
+		v.updateVM(vmId, "broken", "")
+		fmt.Fprintln(os.Stderr, "error removing bridge from default runlevel: %v", err)
+		return
+	}
+
 	// Remove the bridge symlink
 	err = os.Remove(fmt.Sprintf("/etc/init.d/net.br%v", vmId))
 	if err != nil {
@@ -380,7 +388,7 @@ func createVM(vmId int, v VMList) {
 	}
 
 	// Create the symlink for the bridge
-	err = os.Symlink("/etc/init.d/net.lo", fmt.Sprintf("/etc/init.d/net.br%v", vmId))
+	err = os.Symlink("/etc/init.d/net.bridge", fmt.Sprintf("/etc/init.d/net.br%v", vmId))
 	if err != nil {
 		v.updateVM(vmId, "broken", "")
 		fmt.Fprintf(os.Stderr, "error creating bridge symilnk for new VM: %v", err)
@@ -400,6 +408,14 @@ func createVM(vmId int, v VMList) {
 	if err != nil {
 		v.updateVM(vmId, "broken", "")
 		fmt.Fprintln(os.Stderr, "error executing bridge restart for new VM: %v", err)
+		return
+	}
+
+	// Configure the bridge to start on boot
+	err = exec.Command("rc-update", "add", fmt.Sprintf("net.br%v", vmId), "default").Run()
+	if err != nil {
+		v.updateVM(vmId, "broken", "")
+		fmt.Fprintln(os.Stderr, "error adding bridge to default runlevel: %v", err)
 		return
 	}
 
